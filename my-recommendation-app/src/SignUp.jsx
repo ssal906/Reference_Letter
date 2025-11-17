@@ -1,7 +1,17 @@
 // SignUp.jsx
 import React, { useMemo, useState } from "react";
 
-const API_BASE = (import.meta?.env?.VITE_API_BASE ?? "http://localhost:8000").replace(/\/+$/, "");
+const getApiBase = () => {
+  const envApiBase = import.meta?.env?.VITE_API_BASE;
+  if (envApiBase) return envApiBase.replace(/\/+$/, "");
+  const isProduction = typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1";
+  if (isProduction) {
+    console.error("⚠️ VITE_API_BASE 환경 변수가 설정되지 않았습니다!");
+    return "";
+  }
+  return "http://localhost:8000";
+};
+const API_BASE = getApiBase();
 
 const styles = {
   card: {
@@ -338,9 +348,18 @@ export default function SignUp() {
   const [step1Payload, setStep1Payload] = useState(null);
 
   const checkEmail = async () => {
-    if (!email) return;
-    const r = await get(`/auth/email-available?email=${encodeURIComponent(email)}`);
-    setEmailChecked(r.available);
+    if (!email) {
+      alert("이메일을 입력해주세요.");
+      return;
+    }
+    try {
+      const r = await get(`/auth/email-available?email=${encodeURIComponent(email)}`);
+      setEmailChecked(r.available);
+    } catch (error) {
+      console.error("이메일 중복 확인 오류:", error);
+      alert("이메일 중복 확인 중 오류가 발생했습니다. 다시 시도해주세요.");
+      setEmailChecked(null);
+    }
   };
 
   const handleCheckPw = () => {
