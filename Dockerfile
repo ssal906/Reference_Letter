@@ -17,6 +17,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # static 디렉토리 미리 생성
 RUN mkdir -p /app/static/audio/temp
 
+# evals 디렉토리 복사
+COPY evals ./evals
+
 # 애플리케이션 코드 복사
 COPY server.py .
 
