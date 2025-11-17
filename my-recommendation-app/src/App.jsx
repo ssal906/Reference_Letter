@@ -7,7 +7,20 @@ import VoiceInputButton from "./VoiceInputButton.jsx"; // 🎤 음성 입력
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
 
 // API Base URL (환경 변수 지원)
-const API_BASE = (import.meta?.env?.VITE_API_BASE ?? "http://localhost:8000").replace(/\/+$/, "");
+// api.js에서 export한 API_BASE를 사용하거나, 직접 정의
+const getApiBase = () => {
+  const envApiBase = import.meta?.env?.VITE_API_BASE;
+  if (envApiBase) {
+    return envApiBase.replace(/\/+$/, "");
+  }
+  const isProduction = window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1";
+  if (isProduction) {
+    console.error("⚠️ VITE_API_BASE 환경 변수가 설정되지 않았습니다!");
+    return "";
+  }
+  return "http://localhost:8000";
+};
+const API_BASE = getApiBase();
 
 // -----------------------------
 // 스타일 객체
@@ -355,11 +368,21 @@ function LoginForm({ onLogin, onToggleMode, language, onLanguageChange }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
+      
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({ detail: response.statusText }));
+        throw new Error(data.detail || `로그인 실패 (${response.status})`);
+      }
+      
       const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "로그인 실패");
       onLogin(data);
     } catch (error) {
-      alert(error.message);
+      console.error("Login error:", error);
+      if (error.message.includes("Failed to fetch") || error.message.includes("NetworkError")) {
+        alert("서버에 연결할 수 없습니다. 네트워크 연결을 확인하거나 잠시 후 다시 시도해주세요.");
+      } else {
+        alert(error.message || "로그인 중 오류가 발생했습니다.");
+      }
     } finally {
       setLoading(false);
     }
