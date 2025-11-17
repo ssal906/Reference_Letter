@@ -37,7 +37,7 @@ from openai import OpenAI
 from sqlalchemy import create_engine, text
 
 # ▼ 기존 evals 시스템 import
-# evals 디렉토리가 상위 디렉토리에 있으므로 경로 추가
+# evals 디렉토리가 server.py와 같은 레벨에 있으므로 경로 추가
 evals_path = str(Path(__file__).resolve().parent)
 if evals_path not in sys.path:
     sys.path.insert(0, evals_path)
@@ -77,7 +77,15 @@ if not openai_api_key:
 # OpenAI 클라이언트 초기화
 openai_client = OpenAI(api_key=openai_api_key) if openai_api_key else None
 
-DATABASE_URL = os.getenv("DATABASE_URL", "mysql+pymysql://app:app@localhost:3306/collyai_dev?charset=utf8mb4")
+# DATABASE_URL 자동 변환: mysql:// -> mysql+pymysql://
+_raw_db_url = os.getenv("DATABASE_URL", "mysql+pymysql://app:app@localhost:3306/collyai_dev?charset=utf8mb4")
+if _raw_db_url.startswith("mysql://") and not _raw_db_url.startswith("mysql+pymysql://"):
+    # Railway MySQL URL을 PyMySQL 형식으로 변환
+    _raw_db_url = _raw_db_url.replace("mysql://", "mysql+pymysql://", 1)
+    # charset=utf8mb4 추가 (없는 경우)
+    if "charset=" not in _raw_db_url:
+        _raw_db_url += ("&" if "?" in _raw_db_url else "?") + "charset=utf8mb4"
+DATABASE_URL = _raw_db_url
 JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key")
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24시간
