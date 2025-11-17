@@ -7,7 +7,17 @@ import { useEffect, useState } from "react";
  */
 
 // API Base URL (환경 변수 지원)
-const API_BASE = (import.meta?.env?.VITE_API_BASE ?? "http://localhost:8000").replace(/\/+$/, "");
+const getApiBase = () => {
+  const envApiBase = import.meta?.env?.VITE_API_BASE;
+  if (envApiBase) return envApiBase.replace(/\/+$/, "");
+  const isProduction = typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1";
+  if (isProduction) {
+    console.error("⚠️ VITE_API_BASE 환경 변수가 설정되지 않았습니다!");
+    return "";
+  }
+  return "http://localhost:8000";
+};
+const API_BASE = getApiBase();
 
 const styles = {
   page: { width: "100%" },
