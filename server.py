@@ -1187,47 +1187,47 @@ async def delete_history_item(item_id: int):
 # ===== 인증 API =====
 @app.post("/register")
 async def register(user: UserRegister):
-    with engine.connect() as conn:
-        existing_user = conn.execute(
-            text("SELECT id FROM users WHERE email = :email"),
-            {"email": user.email}
-        ).first()
-        if existing_user:
-            raise HTTPException(status_code=400, detail="Email already registered")
-        
-        hashed_password = hash_password(user.password)
-        
-        # ▼ 마이그레이션 컬럼명과 동일하게 INSERT
-        #   users(email,password,serialNumber,nickname,gender,birth,phone,postCode,address,addressDetail,avatar,createdAt,updatedAt)
-        #   참고: 마이그레이션 스키마 :contentReference[oaicite:7]{index=7}
-        conn.execute(
-            text("""
-                INSERT INTO users (
-                    email, password, serialNumber, nickname, gender, birth,
-                    phone, postCode, address, addressDetail, avatar,
-                    createdAt, updatedAt
-                )
-                VALUES (
-                    :email, :password, :serialNumber, :nickname, :gender, :birth,
-                    :phone, :postCode, :address, :addressDetail, :avatar,
-                    NOW(), NOW()
-                )
-            """),
-            {
-                "email": user.email,
-                "password": hashed_password,
-                "serialNumber": user.serialNumber,
-                "nickname": user.nickname,
-                "gender": user.gender,
-                "birth": user.birth,
-                "phone": user.phone,
-                "postCode": user.postCode,
-                "address": user.address,
-                "addressDetail": user.addressDetail,
-                "avatar": user.avatar
-            }
-        )
-        conn.commit()
+    try:
+        with engine.begin() as conn:  # begin()을 사용하여 자동 커밋
+            existing_user = conn.execute(
+                text("SELECT id FROM users WHERE email = :email AND deletedAt IS NULL"),
+                {"email": user.email}
+            ).first()
+            if existing_user:
+                raise HTTPException(status_code=400, detail="Email already registered")
+            
+            hashed_password = hash_password(user.password)
+            
+            # ▼ 마이그레이션 컬럼명과 동일하게 INSERT
+            #   users(email,password,serialNumber,nickname,gender,birth,phone,postCode,address,addressDetail,avatar,createdAt,updatedAt)
+            conn.execute(
+                text("""
+                    INSERT INTO users (
+                        email, password, serialNumber, nickname, gender, birth,
+                        phone, postCode, address, addressDetail, avatar,
+                        createdAt, updatedAt
+                    )
+                    VALUES (
+                        :email, :password, :serialNumber, :nickname, :gender, :birth,
+                        :phone, :postCode, :address, :addressDetail, :avatar,
+                        NOW(), NOW()
+                    )
+                """),
+                {
+                    "email": user.email,
+                    "password": hashed_password,
+                    "serialNumber": user.serialNumber,
+                    "nickname": user.nickname,
+                    "gender": user.gender,
+                    "birth": user.birth,
+                    "phone": user.phone,
+                    "postCode": user.postCode,
+                    "address": user.address,
+                    "addressDetail": user.addressDetail,
+                    "avatar": user.avatar
+                }
+            )
+            # begin()을 사용하면 자동으로 커밋됨
         
         access_token = create_access_token({"sub": user.email})
         return Token(
@@ -1238,38 +1238,53 @@ async def register(user: UserRegister):
                 "nickname": user.nickname
             }
         )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Register error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @app.post("/login")
 async def login(user: UserLogin):
-    with engine.connect() as conn:
-        result = conn.execute(
-            text("SELECT * FROM users WHERE email = :email AND deletedAt IS NULL"),
-            {"email": user.email},
-        ).first()
-        if not result:
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(
+                text("SELECT * FROM users WHERE email = :email AND deletedAt IS NULL"),
+                {"email": user.email},
+            ).first()
+            if not result:
+                raise HTTPException(status_code=401, detail="Invalid email or password")
+
+        user_row = dict(result._mapping)
+        stored_hash = user_row.get("password")
+
+        try:
+            ok = pwd_context.verify(user.password, stored_hash)
+        except Exception:
+            ok = False
+        if not ok:
             raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    user_row = dict(result._mapping)
-    stored_hash = user_row.get("password")
-
-    try:
-        ok = pwd_context.verify(user.password, stored_hash)
-    except Exception:
-        ok = False
-    if not ok:
-        raise HTTPException(status_code=401, detail="Invalid email or password")
-
-    token = create_access_token({"sub": user.email})
-    return Token(
-        access_token=token,
-        token_type="bearer",
-        user={
-            "id": user_row.get("id"),
-            "email": user_row.get("email"),
-            "name": user_row.get("name"),
-            "nickname": user_row.get("nickname"),
-        },
-    )
+        token = create_access_token({"sub": user.email})
+        return Token(
+            access_token=token,
+            token_type="bearer",
+            user={
+                "id": user_row.get("id"),
+                "email": user_row.get("email"),
+                "name": user_row.get("name"),
+                "nickname": user_row.get("nickname"),
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Login error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @app.get("/me")
 async def read_users_me(current_user: dict = Depends(get_current_user)):
