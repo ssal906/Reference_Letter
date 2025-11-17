@@ -23,7 +23,10 @@ COPY server.py .
 # 포트 노출
 EXPOSE 8000
 
-# 서버 실행 (Railway의 PORT 환경 변수 사용)
-# Python으로 포트를 읽어서 안정적으로 처리
-CMD python -c "import os; import uvicorn; port = int(os.environ.get('PORT', 8000)); uvicorn.run('server:app', host='0.0.0.0', port=port)"
+# 시작 스크립트 생성
+RUN echo '#!/bin/sh\nPORT=${PORT:-8000}\nexec uvicorn server:app --host 0.0.0.0 --port "$PORT"' > /app/start.sh && \
+    chmod +x /app/start.sh
+
+# 서버 실행
+CMD ["/app/start.sh"]
 
