@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>음성 입력 테스트 - Collyai</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #fef2f2 0%, #ffe4e6 50%, #fff1f2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+            max-width: 800px;
+            width: 100%;
+        }
+
+        h1 {
+            text-align: center;
+            color: #dc2626;
+            margin-bottom: 10px;
+            font-size: 2rem;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #6b7280;
+            margin-bottom: 30px;
+            font-size: 0.95rem;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            margin-bottom: 30px;
+        }
+
+        button {
+            padding: 14px 28px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        #startBtn {
+            background: linear-gradient(135deg, #4CAF50, #45a049);
+            color: white;
+        }
+
+        #startBtn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(76, 175, 80, 0.3);
+        }
+
+        #stopBtn {
+            background: linear-gradient(135deg, #f44336, #e53935);
+            color: white;
+        }
+
+        #stopBtn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(244, 67, 54, 0.3);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .status {
+            text-align: center;
+            padding: 15px;
+            background: #f3f4f6;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-weight: 600;
+            color: #374151;
+        }
+
+        .status.recording {
+            background: linear-gradient(135deg, #fef3c7, #fde68a);
+            animation: pulse 1.5s infinite;
+        }
+
+        .status.processing {
+            background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+
+        .result-section {
+            margin-top: 20px;
+        }
+
+        .result-box {
+            background: #f9fafb;
+            border: 2px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .result-box h3 {
+            color: #dc2626;
+            margin-bottom: 12px;
+            font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .result-box p {
+            color: #4b5563;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+
+        .field-label {
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 6px;
+            display: block;
+        }
+
+        .field-value {
+            background: white;
+            padding: 12px;
+            border-radius: 6px;
+            border: 1px solid #e5e7eb;
+            margin-bottom: 12px;
+            color: #374151;
+            min-height: 40px;
+        }
+
+        .error {
+            background: #fee2e2;
+            border: 2px solid #fca5a5;
+            color: #991b1b;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+
+        .recording-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            background: #ef4444;
+            border-radius: 50%;
+            animation: blink 1s infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .info-box {
+            background: #eff6ff;
+            border: 2px solid #bfdbfe;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: #1e40af;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        .info-box strong {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 음성 입력 테스트</h1>
+        <p class="subtitle">추천서 작성을 위한 음성 입력 기능을 테스트해보세요</p>
+
+        <div class="info-box">
+            <strong>💡 사용 방법</strong>
+            1. "녹음 시작" 버튼을 클릭하고 마이크 권한을 허용하세요<br>
+            2. 추천서 내용을 자유롭게 말해보세요<br>
+            3. "녹음 중지" 버튼을 클릭하면 자동으로 필드별로 분류됩니다<br>
+            <br>
+            <strong>예시:</strong> "저는 김철수 교수이고, 이 학생은 제 연구실에서 2년간 근무했습니다. 정말 성실하고 책임감이 강하며, 특히 AI 프로젝트를 혼자서 완성한 적이 있습니다."
+        </div>
+
+        <div class="button-group">
+            <button id="startBtn">
+                <span>🎤</span>
+                <span>녹음 시작</span>
+            </button>
+            <button id="stopBtn" disabled>
+                <span>⏹️</span>
+                <span>녹음 중지</span>
+            </button>
+        </div>
+
+        <div id="status" class="status">대기 중...</div>
+
+        <div id="result" class="result-section" style="display: none;">
+            <div class="result-box">
+                <h3>📝 변환된 텍스트</h3>
+                <p id="transcribedText" class="field-value"></p>
+            </div>
+
+            <div class="result-box">
+                <h3>🗂️ 자동 분류된 필드</h3>
+                
+                <label class="field-label">요청자와의 관계</label>
+                <div id="relationship" class="field-value"></div>
+
+                <label class="field-label">주요 강점</label>
+                <div id="strengths" class="field-value"></div>
+
+                <label class="field-label">기억에 남는 일</label>
+                <div id="memorable" class="field-value"></div>
+
+                <label class="field-label">추가 정보</label>
+                <div id="additionalInfo" class="field-value"></div>
+            </div>
+        </div>
+
+        <div id="error" class="error" style="display: none;"></div>
+    </div>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const status = document.getElementById('status');
+        const resultDiv = document.getElementById('result');
+        const errorDiv = document.getElementById('error');
+
+        startBtn.addEventListener('click', startRecording);
+        stopBtn.addEventListener('click', stopRecording);
+
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        audioChunks.push(event.data);
+                    }
+                };
+
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    await uploadAudio(audioBlob);
+                    stream.getTracks().forEach(track => track.stop());
+                };
+
+                mediaRecorder.start();
+                
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                status.className = 'status recording';
+                status.innerHTML = '<span class="recording-indicator"></span>녹음 중... 말씀하세요!';
+                resultDiv.style.display = 'none';
+                errorDiv.style.display = 'none';
+
+                console.log('✅ 녹음 시작');
+            } catch (error) {
+                console.error('❌ 마이크 접근 오류:', error);
+                showError('마이크 접근 권한이 필요합니다. 브라우저 설정에서 마이크 권한을 허용해주세요.');
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                status.className = 'status processing';
+                status.textContent = '⏳ 처리 중... 잠시만 기다려주세요';
+                console.log('⏹️ 녹음 중지');
+            }
+        }
+
+        async function uploadAudio(audioBlob) {
+            try {
+                const formData = new FormData();
+                formData.append('audio_file', audioBlob, 'recording.webm');
+
+                console.log('📤 서버로 전송 중...');
+                const response = await fetch('http://localhost:8000/parse-voice-input', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || '음성 처리 실패');
+                }
+
+                const data = await response.json();
+                console.log('✅ 서버 응답:', data);
+
+                displayResults(data);
+                
+                status.className = 'status';
+                status.textContent = '✅ 완료! 아래 결과를 확인하세요';
+
+            } catch (error) {
+                console.error('❌ 업로드 오류:', error);
+                showError(`음성 처리 중 오류가 발생했습니다: ${error.message}\n\n서버가 실행 중인지 확인해주세요 (http://localhost:8000)`);
+                status.className = 'status';
+                status.textContent = '❌ 처리 실패';
+            }
+        }
+
+        function displayResults(data) {
+            document.getElementById('transcribedText').textContent = data.transcribed_text || '(없음)';
+            document.getElementById('relationship').textContent = data.fields.relationship || '(내용 없음)';
+            document.getElementById('strengths').textContent = data.fields.strengths || '(내용 없음)';
+            document.getElementById('memorable').textContent = data.fields.memorable || '(내용 없음)';
+            document.getElementById('additionalInfo').textContent = data.fields.additional_info || '(내용 없음)';
+            
+            resultDiv.style.display = 'block';
+            errorDiv.style.display = 'none';
+        }
+
+        function showError(message) {
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            resultDiv.style.display = 'none';
+        }
+    </script>
+</body>
+</html>
+
+

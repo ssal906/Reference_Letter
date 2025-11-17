@@ -1,0 +1,35 @@
+# docker-compose.yml
+services:
+  db:
+    image: mysql:8.0
+    container_name: dev-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: collyai_dev
+      MYSQL_USER: app
+      MYSQL_PASSWORD: app
+      TZ: Asia/Seoul
+    ports:
+      - "3306:3306"
+    command: >
+      mysqld
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-proot"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - dbdata:/var/lib/mysql
+
+  adminer:
+    image: adminer
+    container_name: dev-adminer
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+
+volumes:
+  dbdata:
