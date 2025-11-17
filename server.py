@@ -126,6 +126,49 @@ engine = create_engine(
 
 app = FastAPI()
 
+# 요청/응답 로깅 미들웨어
+@app.middleware("http")
+async def log_requests(request, call_next):
+    import time
+    from starlette.requests import Request
+    from starlette.responses import StreamingResponse
+    
+    start_time = time.time()
+    
+    # 요청 정보 로깅
+    print(f"\n{'='*50}")
+    print(f"📥 Request: {request.method} {request.url.path}")
+    print(f"   Query params: {dict(request.query_params)}")
+    
+    # POST/PUT/PATCH 요청의 body 로깅 (스트림 복원)
+    if request.method in ["POST", "PUT", "PATCH"]:
+        try:
+            body = await request.body()
+            if body:
+                body_str = body.decode()[:500]  # 처음 500자만
+                print(f"   Body: {body_str}")
+                # body를 다시 스트림으로 복원
+                async def receive():
+                    return {"type": "http.request", "body": body}
+                request._receive = receive
+        except Exception as e:
+            print(f"   Body read error: {e}")
+    
+    # 응답 처리
+    try:
+        response = await call_next(request)
+        process_time = time.time() - start_time
+        print(f"📤 Response: {response.status_code} ({process_time:.3f}s)")
+        print(f"{'='*50}\n")
+        return response
+    except Exception as e:
+        process_time = time.time() - start_time
+        print(f"❌ Error: {str(e)} ({process_time:.3f}s)")
+        import traceback
+        traceback.print_exc()
+        print(f"{'='*50}\n")
+        raise
+
 # 정적 파일 제공 (HTML, CSS, JS)
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 if not os.path.exists(STATIC_DIR):
