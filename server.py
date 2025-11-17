@@ -38,7 +38,7 @@ from sqlalchemy import create_engine, text
 
 # ▼ 기존 evals 시스템 import
 # evals 디렉토리가 상위 디렉토리에 있으므로 경로 추가
-evals_path = str(Path(__file__).resolve().parent.parent)
+evals_path = str(Path(__file__).resolve().parent)
 if evals_path not in sys.path:
     sys.path.insert(0, evals_path)
 
