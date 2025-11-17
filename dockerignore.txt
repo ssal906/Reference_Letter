@@ -1,0 +1,93 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Environment variables (Railway에서 직접 설정)
+.env
+.env.*
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+*.egg-info/
+.pytest_cache/
+
+# Node.js (프론트엔드는 별도 배포)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+package.json
+
+# Frontend (별도 서비스로 배포)
+my-recommendation-app/
+my-project/
+
+# Build outputs
+dist/
+build/
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+*.tmp
+temp/
+tmp/
+*.bak
+*.swp
+
+# Documentation (배포에 불필요)
+*.md
+!README.md
+
+# Static files (필요시 별도 처리)
+static/audio/
+static/voice_test.html
+
+# Test files
+test/
+tests/
+*_test.py
+*_tests.py
+
+# Database migrations (필요시 별도 처리)
+db/migrations/
+db/seeders/
+db/docker/
+
+# Other
+eval_results/
+fix-api-urls.js
+SQL명령문 데이터 입력.txt
+
