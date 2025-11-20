@@ -23,7 +23,94 @@ body {
   color: #1f2937;
 }
 
-/* Custom scrollbar */
+body.dark {
+  background-color: #0f0f0f !important;
+  color: #e0e0e0 !important;
+}
+
+body.dark * {
+  border-color: inherit;
+}
+
+body.dark label {
+  color: #e0e0e0 !important;
+}
+
+body.dark h1, body.dark h2, body.dark h3, body.dark h4, body.dark h5, body.dark h6 {
+  color: #e0e0e0 !important;
+}
+
+body.dark p {
+  color: #a0a0a0 !important;
+}
+
+body.dark textarea, body.dark select {
+  background-color: #1a1a1a !important;
+  color: #e0e0e0 !important;
+  border-color: #9370DB !important;
+}
+
+body.dark input:not([type="checkbox"]):not([type="radio"]) {
+  background-color: #1a1a1a !important;
+  color: #e0e0e0 !important;
+}
+
+body.dark input:disabled {
+  background-color: rgba(147, 112, 219, 0.15) !important;
+  color: #9370DB !important;
+  border-color: #9370DB !important;
+  opacity: 1 !important;
+}
+
+body.dark textarea:disabled {
+  background-color: rgba(147, 112, 219, 0.15) !important;
+  color: #9370DB !important;
+  border-color: #9370DB !important;
+  opacity: 1 !important;
+}
+
+body.dark span:not([style*="background: linear"]):not([style*="background:linear"]) {
+  color: #e0e0e0 !important;
+}
+
+body.dark div:not([style*="background: linear"]):not([style*="background:linear"]):not([style*="background: white"]):not([style*="background:white"]):not([style*="background:#"]) {
+  color: inherit;
+}
+
+/* 서명 관련 스타일 */
+body.dark canvas {
+  background-color: #ffffff !important;
+  border: 2px solid #9370DB !important;
+  border-radius: 8px;
+}
+
+body.dark [style*="color: #6b7280"],
+body.dark [style*="color:#6b7280"],
+body.dark [style*="color: rgb(107, 114, 128)"] {
+  color: #a0a0a0 !important;
+}
+
+body.dark [style*="color: #9ca3af"],
+body.dark [style*="color:#9ca3af"] {
+  color: #888888 !important;
+}
+
+/* 서명 버튼 및 미리보기 영역 */
+body.dark [style*="background: #fef2f2"],
+body.dark [style*="background:#fef2f2"] {
+  background: #1a1a1a !important;
+}
+
+body.dark [style*="border: 2px dashed #fca5a5"],
+body.dark [style*="border:2px dashed #fca5a5"] {
+  border: 2px dashed #9370DB !important;
+}
+
+body.dark img[alt="서명"] {
+  filter: brightness(1.2);
+}
+
+/* Custom scrollbar - 달빛 테마 */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -35,12 +122,24 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #ef4444, #dc2626);
+  background: linear-gradient(180deg, #9370DB, #6A5ACD);
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #dc2626, #b91c1c);
+  background: linear-gradient(180deg, #9370DB, #FFD700);
+}
+
+body.dark ::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+
+body.dark ::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #9370DB, #6A5ACD);
+}
+
+body.dark ::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #9370DB, #FFD700);
 }
 
 /* Animations */
@@ -87,8 +186,18 @@ select:focus {
   opacity: 1;
 }
 
-/* Selection styles */
+body.dark ::placeholder {
+  color: #666666;
+  opacity: 1;
+}
+
+/* Selection styles - 달빛 테마 */
 ::selection {
-  background-color: #fee2e2;
-  color: #991b1b;
+  background-color: #e8e5ff;
+  color: #6A5ACD;
+}
+
+body.dark ::selection {
+  background-color: #9370DB;
+  color: #ffffff;
 }
