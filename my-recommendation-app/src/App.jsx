@@ -2,73 +2,72 @@
 import React, { useState, useEffect, useRef } from "react";
 import SignUp from "./SignUp.jsx";
 import Profile from "./Profile.jsx";
-import Box from "./Box.jsx"; // ✅ 보관함 (작성한 추천서 & 작성한 평판)
+import Box from "./Box.jsx"; // ✅ Profile 연결
 import VoiceInputButton from "./VoiceInputButton.jsx"; // 🎤 음성 입력
+import DocumentUploadButton from "./DocumentUploadButton.jsx"; // 📄 문서 업로드
+import LandingPage from "./LandingPage.jsx"; // 🏠 랜딩 페이지
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
-
-// API Base URL (환경 변수 지원)
-// api.js에서 export한 API_BASE를 사용하거나, 직접 정의
-const getApiBase = () => {
-  const envApiBase = import.meta?.env?.VITE_API_BASE;
-  if (envApiBase) {
-    return envApiBase.replace(/\/+$/, "");
-  }
-  const isProduction = window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1";
-  if (isProduction) {
-    console.error("⚠️ VITE_API_BASE 환경 변수가 설정되지 않았습니다!");
-    return "";
-  }
-  return "http://localhost:8000";
-};
-const API_BASE = getApiBase();
+import { apiPost, apiGet, apiFetch, getAuthHeader } from "./api.js";
 
 // -----------------------------
-// 스타일 객체
+// 스타일 객체 (다크모드 지원)
 // -----------------------------
-const styles = {
-  // 공통
-  gradient: { background: "linear-gradient(135deg, #dc2626 0%, #ef4444 100%)" },
-  gradientRed: { background: "linear-gradient(to right, #ef4444, #dc2626)" },
-  gradientPink: { background: "linear-gradient(to right, #ec4899, #f43f5e)" },
-  gradientEmerald: { background: "linear-gradient(to right, #ef4444, #dc2626)" },
+const getStyles = (darkMode) => ({
+  // 공통 - 달빛 테마 (보라+노랑)
+  gradient: { background: "linear-gradient(135deg, #9370DB 0%, #6A5ACD 50%, #FFD700 100%)" },
+  gradientRed: { background: "linear-gradient(to right, #9370DB, #6A5ACD)" }, // 보라색 그라데이션
+  gradientPink: { background: "linear-gradient(to right, #6A5ACD, #FFD700)" },
+  gradientEmerald: { background: "linear-gradient(to right, #9370DB, #FFD700)" },
 
-  // 컨테이너
+  // 컨테이너 - 달빛 배경 (더 진하게)
   pageContainer: {
     minHeight: "100vh",
-    background: "linear-gradient(135deg, #fef2f2 0%, #ffe4e6 50%, #fff1f2 100%)",
+    background: darkMode 
+      ? "linear-gradient(135deg, #0f0f0f 0%, #1a1a2a 50%, #0a0a0a 100%)"
+      : "linear-gradient(135deg, #e8e5ff 0%, #f5e6ff 50%, #fff9e6 100%)",
   },
 
   // 로그인/회원가입 카드
   authCard: {
     maxWidth: "450px",
     width: "100%",
-    background: "white",
+    background: darkMode ? "#1a1a1a" : "white",
     borderRadius: "20px",
-    boxShadow:
-      "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
+    boxShadow: darkMode
+      ? "0 25px 50px -12px rgba(147, 112, 219, 0.3), 0 12px 20px -8px rgba(147, 112, 219, 0.2)"
+      : "0 25px 50px -12px rgba(0, 0, 0, 0.35), 0 12px 20px -8px rgba(0, 0, 0, 0.25)",
     padding: "2rem",
+    border: darkMode ? "1px solid #9370DB" : "1px solid #d1d5db",
+    color: darkMode ? "#e0e0e0" : "#1f2937",
   },
 
   // 네비게이션
   nav: {
-    background: "rgba(255, 255, 255, 0.8)",
+    background: darkMode ? "rgba(15, 15, 15, 0.95)" : "rgba(255, 255, 255, 0.98)",
     backdropFilter: "blur(10px)",
-    boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+    boxShadow: darkMode 
+      ? "0 4px 6px rgba(147, 112, 219, 0.25)"
+      : "0 4px 6px rgba(0, 0, 0, 0.25)",
     position: "fixed",
     width: "100%",
     top: 0,
     zIndex: 1000,
-    borderBottom: "1px solid #e5e7eb",
+    borderBottom: darkMode ? "2px solid #9370DB" : "3px solid #9ca3af",
   },
 
   // 입력 필드
   input: {
     width: "100%",
     padding: "12px 16px",
-    border: "2px solid #e5e7eb",
+    border: darkMode ? "1px solid #9370DB" : "1px solid #d1d5db",
     borderRadius: "12px",
     fontSize: "14px",
     transition: "all 0.2s",
+    backgroundColor: darkMode ? "#1a1a1a" : "white",
+    boxShadow: darkMode 
+      ? "0 2px 8px rgba(147, 112, 219, 0.15)"
+      : "0 2px 4px rgba(0, 0, 0, 0.08)",
+    color: darkMode ? "#e0e0e0" : "#1f2937",
   },
 
   // 버튼
@@ -83,15 +82,24 @@ const styles = {
     transition: "all 0.2s",
   },
 
-  // 카드
+  // 카드 - 달빛 그림자
   card: {
-    background: "white",
+    background: darkMode ? "#1a1a1a" : "white",
     borderRadius: "16px",
-    boxShadow: "0 4px 6px rgba(0, 0, 0, 0.07)",
+    boxShadow: darkMode
+      ? "0 8px 24px rgba(147, 112, 219, 0.25), 0 4px 12px rgba(147, 112, 219, 0.15)"
+      : "0 8px 16px rgba(0, 0, 0, 0.3)",
     padding: "2rem",
     marginBottom: "2rem",
+    border: darkMode ? "1px solid #9370DB" : "1px solid #d1d5db",
+    color: darkMode ? "#e0e0e0" : "#1f2937",
   },
-};
+  
+  // 텍스트 색상 헬퍼
+  textPrimary: darkMode ? "#e0e0e0" : "#1f2937",
+  textSecondary: darkMode ? "#a0a0a0" : "#6b7280",
+  textMuted: darkMode ? "#888888" : "#9ca3af",
+});
 
 // -----------------------------
 // 상수
@@ -101,7 +109,6 @@ const TONE_LABELS = {
   Friendly: "친근한",
   Concise: "간결한",
   Persuasive: "설득형",
-  Neutral: "중립적",
 };
 
 // ----- 다국어 지원 -----
@@ -112,14 +119,6 @@ const TRANSLATIONS = {
       Friendly: "친근한",
       Concise: "간결한",
       Persuasive: "설득형",
-      Neutral: "중립적",
-    },
-    scoreLabels: {
-      "5": "최우선 추천",
-      "4": "강력히 추천",
-      "3": "추천함",
-      "2": "약하게 추천",
-      "1": "매우 약하게 추천",
     },
     login: {
       title: "AI 추천서",
@@ -148,6 +147,28 @@ const TRANSLATIONS = {
       lookup: "조회",
       generate: "생성",
       logout: "로그아웃",
+    },
+    sidebar: {
+      home: "홈",
+      permissions: "권한 관리",
+      profile: "프로필",
+      info: "내 정보",
+      experience: "경력",
+      awards: "수상이력",
+      certifications: "자격증",
+      projects: "프로젝트",
+      strengths: "강점",
+      reputations: "평판",
+      archive: "보관함",
+      sentRecommendations: "작성한 추천서",
+      sentReputations: "작성한 평판",
+      logout: "로그아웃",
+      expand: "펼치기",
+      collapse: "접기",
+      lightMode: "라이트 모드",
+      darkMode: "다크 모드",
+      light: "라이트",
+      dark: "다크",
     },
     main: {
       title: "AI 추천서 생성기",
@@ -217,6 +238,11 @@ const TRANSLATIONS = {
       improvementNotesPlaceholder: "추천서에서 고치고 싶은 부분이나 개선하고 싶은 사항을 자유롭게 작성하세요. 비워두면 AI가 전체적으로 다듬어줍니다. 예: 더 구체적인 예시 추가, 톤 조정, 특정 부분 강조 등",
       finalizeButton: "최종 완성",
       finalizing: "최종 완성 중...",
+      documentUpload: "📄 문서 업로드",
+      documentProcessing: "분석 중...",
+      voiceInput: "🎤 음성 입력",
+      voiceProcessing: "처리 중...",
+      voiceRecording: "⏹️ 녹음 중지",
     },
   },
   en: {
@@ -225,14 +251,6 @@ const TRANSLATIONS = {
       Friendly: "Friendly",
       Concise: "Concise",
       Persuasive: "Persuasive",
-      Neutral: "Neutral",
-    },
-    scoreLabels: {
-      "5": "Highest Priority",
-      "4": "Strongly Recommend",
-      "3": "Recommend",
-      "2": "Weakly Recommend",
-      "1": "Very Weakly Recommend",
     },
     login: {
       title: "AI Recommendation",
@@ -262,14 +280,36 @@ const TRANSLATIONS = {
       generate: "Generate",
       logout: "Logout",
     },
+    sidebar: {
+      home: "Home",
+      permissions: "Permissions",
+      profile: "Profile",
+      info: "My Info",
+      experience: "Experience",
+      awards: "Awards",
+      certifications: "Certifications",
+      projects: "Projects",
+      strengths: "Strengths",
+      reputations: "Received Reputations",
+      archive: "Archive",
+      sentRecommendations: "Sent Recommendations",
+      sentReputations: "Sent Reputations",
+      logout: "Logout",
+      expand: "Expand",
+      collapse: "Collapse",
+      lightMode: "Light Mode",
+      darkMode: "Dark Mode",
+      light: "Light",
+      dark: "Dark",
+    },
     main: {
       title: "AI Recommendation Generator",
       subtitle: "AI automatically creates professional and persuasive recommendation letters for you",
     },
     lookup: {
       title: "User Lookup",
-      subtitle: "Check if a user exists in the database by nickname/name",
-      placeholder: "Enter nickname or name...",
+      subtitle: "Check if a user exists in the database by email",
+      placeholder: "Enter email...",
       search: "Search",
       searching: "Searching...",
       notFound: "User not found in database.",
@@ -330,6 +370,11 @@ const TRANSLATIONS = {
       improvementNotesPlaceholder: "Describe what you'd like to improve in the recommendation. Leave blank for general refinement. e.g., Add more specific examples, adjust tone, emphasize certain aspects, etc.",
       finalizeButton: "Finalize",
       finalizing: "Finalizing...",
+      documentUpload: "📄 Upload Document",
+      documentProcessing: "Processing...",
+      voiceInput: "🎤 Voice Input",
+      voiceProcessing: "Processing...",
+      voiceRecording: "⏹️ Stop Recording",
     },
   },
 };
@@ -354,35 +399,21 @@ const INITIAL_FORM = {
 // -----------------------------
 // 로그인 폼 (하단 토글로 회원가입 전환)
 // -----------------------------
-function LoginForm({ onLogin, onToggleMode, language, onLanguageChange }) {
+function LoginForm({ onLogin, onToggleMode, language, onLanguageChange, darkMode, onBack }) {
   const [form, setForm] = useState({ email: "", password: "" });
   const [loading, setLoading] = useState(false);
   const t = TRANSLATIONS[language];
+  const styles = getStyles(darkMode);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-      
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({ detail: response.statusText }));
-        throw new Error(data.detail || `로그인 실패 (${response.status})`);
-      }
-      
-      const data = await response.json();
+      const data = await apiPost("/login", form);
+      if (!response.ok) throw new Error(data.detail || "로그인 실패");
       onLogin(data);
     } catch (error) {
-      console.error("Login error:", error);
-      if (error.message.includes("Failed to fetch") || error.message.includes("NetworkError")) {
-        alert("서버에 연결할 수 없습니다. 네트워크 연결을 확인하거나 잠시 후 다시 시도해주세요.");
-      } else {
-        alert(error.message || "로그인 중 오류가 발생했습니다.");
-      }
+      alert(error.message);
     } finally {
       setLoading(false);
     }
@@ -399,6 +430,43 @@ function LoginForm({ onLogin, onToggleMode, language, onLanguageChange }) {
         position: "relative",
       }}
     >
+      {/* 뒤로가기 버튼 */}
+      {onBack && (
+        <button
+          onClick={onBack}
+          style={{
+            position: 'absolute',
+            top: '2rem',
+            left: '2rem',
+            padding: '10px 20px',
+            fontSize: '14px',
+            fontWeight: '600',
+            color: '#9370DB',
+            background: darkMode ? '#1a1a1a' : 'white',
+            border: '2px solid #9370DB',
+            borderRadius: '12px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            transition: 'all 0.2s',
+            boxShadow: '0 2px 8px rgba(147, 112, 219, 0.2)',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = '#9370DB';
+            e.currentTarget.style.color = 'white';
+            e.currentTarget.style.transform = 'translateX(-4px)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = darkMode ? '#1a1a1a' : 'white';
+            e.currentTarget.style.color = '#9370DB';
+            e.currentTarget.style.transform = 'translateX(0)';
+          }}
+        >
+          ← 뒤로가기
+        </button>
+      )}
+      
       {/* 다국어 버튼 */}
       {onLanguageChange && (
         <button
@@ -410,9 +478,9 @@ function LoginForm({ onLogin, onToggleMode, language, onLanguageChange }) {
             padding: '8px 16px',
             fontSize: '14px',
             fontWeight: '600',
-            color: '#ef4444',
+            color: '#9370DB',
             background: 'white',
-            border: '2px solid #ef4444',
+            border: '2px solid #9370DB',
             borderRadius: '8px',
             cursor: 'pointer',
             display: 'flex',
@@ -421,12 +489,12 @@ function LoginForm({ onLogin, onToggleMode, language, onLanguageChange }) {
             transition: 'all 0.2s',
           }}
           onMouseEnter={(e) => {
-            e.target.style.background = '#ef4444';
+            e.target.style.background = '#9370DB';
             e.target.style.color = 'white';
           }}
           onMouseLeave={(e) => {
             e.target.style.background = 'white';
-            e.target.style.color = '#ef4444';
+            e.target.style.color = '#9370DB';
           }}
         >
           🌐 {language === 'ko' ? 'EN' : '한'}
@@ -464,7 +532,7 @@ function LoginForm({ onLogin, onToggleMode, language, onLanguageChange }) {
             style={{
               fontSize: "28px",
               fontWeight: "bold",
-              background: "linear-gradient(to right, #ef4444, #dc2626)",
+              background: "linear-gradient(to right, #9370DB, #6A5ACD)",
               WebkitBackgroundClip: "text",
               WebkitTextFillColor: "transparent",
               marginBottom: "8px",
@@ -472,7 +540,7 @@ function LoginForm({ onLogin, onToggleMode, language, onLanguageChange }) {
           >
             {t.login.title}
           </h2>
-          <p style={{ color: "#6b7280", fontSize: "14px" }}>
+          <p style={{ color: "#9370DB", fontSize: "14px", fontWeight: "500" }}>
             {t.login.subtitle}
           </p>
         </div>
@@ -486,9 +554,9 @@ function LoginForm({ onLogin, onToggleMode, language, onLanguageChange }) {
               style={{
                 display: "block",
                 fontSize: "14px",
-                fontWeight: "500",
+                fontWeight: "600",
                 marginBottom: "8px",
-                color: "#374151",
+                color: "#9370DB",
               }}
             >
               {t.login.email}
@@ -507,9 +575,9 @@ function LoginForm({ onLogin, onToggleMode, language, onLanguageChange }) {
               style={{
                 display: "block",
                 fontSize: "14px",
-                fontWeight: "500",
+                fontWeight: "600",
                 marginBottom: "8px",
-                color: "#374151",
+                color: "#9370DB",
               }}
             >
               {t.login.password}
@@ -551,7 +619,7 @@ function LoginForm({ onLogin, onToggleMode, language, onLanguageChange }) {
             style={{
               background: "none",
               border: "none",
-              color: "#ef4444",
+              color: "#9370DB",
               fontSize: "14px",
               cursor: "pointer",
               fontWeight: "500",
@@ -575,20 +643,27 @@ function Sidebar({
   onLogout,
   onGoHome,
   onGoProfile,
+  onGoPermissions,
   onGoArchive,
-  activeMain = "home",   // "home" | "profile" | "archive"
+  activeMain = "home",   // "home" | "profile" | "archive" | "permissions"
   activeSub = null,      // 하위 탭
   archiveSub = "recommendations", // 보관함 하위 탭
   language = "ko",
-  onLanguageChange
+  onLanguageChange,
+  darkMode = false,
+  onDarkModeToggle
 }) {
   const width = collapsed ? 72 : 260;
+  const styles = getStyles(darkMode);
+  const t = TRANSLATIONS[language];
 
-  // 색상/타이포
-  const cText = "#374151";
-  const cIcon = "#374151";
-  const cMuted = "#9ca3af";
-  const cActive = "#dc2626"; // 활성 강조색
+  // 색상/타이포 (다크모드 지원) - 달빛 테마
+  const cText = darkMode ? "#d0d0d0" : "#374151";
+  const cIcon = darkMode ? "#9370DB" : "#374151";
+  const cMuted = darkMode ? "#888888" : "#9ca3af";
+  const cActive = darkMode ? "#9370DB" : "#9370DB";
+  const cBg = darkMode ? "rgba(15, 15, 15, 0.95)" : "rgba(255,255,255,0.9)";
+  const cBorder = darkMode ? "#9370DB" : "#f3f4f6";
   const fontTop = collapsed ? 12 : 16; // 홈/프로필/보관함
   const fontSub = collapsed ? 12 : 13; // 하위 메뉴(더 작게)
 
@@ -602,6 +677,11 @@ function Sidebar({
   const UserIcon = ({ active }) => (
     <svg style={{ ...iconBase, color: collapsed ? (active ? cActive : cIcon) : cIcon }} viewBox="0 0 24 24" fill="none" stroke="currentColor">
       <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M5.121 17.804A9 9 0 1 1 18.88 6.196 7 7 0 0 0 12 19a7 7 0 0 0-6.879-1.196z" />
+    </svg>
+  );
+  const KeyIcon = ({ active }) => (
+    <svg style={{ ...iconBase, color: collapsed ? (active ? cActive : cIcon) : cIcon }} viewBox="0 0 24 24" fill="none" stroke="currentColor">
+      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M12 3L5 7.5v4.5c0 4.5 3 8.5 7 10.5 4-2 7-6 7-10.5V7.5L12 3zM9.5 12l1.5 1.5 3-3" />
     </svg>
   );
   const DrawerIcon = ({ active }) => (
@@ -652,9 +732,9 @@ function Sidebar({
       style={{
         width,
         transition: "width .2s ease",
-        background: "rgba(255,255,255,0.9)",
+        background: cBg,
         backdropFilter: "blur(10px)",
-        borderRight: "1px solid #f3f4f6",
+        borderRight: `1px solid ${cBorder}`,
         display: "flex",
         flexDirection: "column",
         position: "sticky",
@@ -671,12 +751,12 @@ function Sidebar({
           alignItems: "center",
           gap: 10,
           padding: "16px 12px",
-          borderBottom: "1px solid #f3f4f6",
+          borderBottom: `1px solid ${cBorder}`,
         }}
       >
         <div
           style={{
-            background: "linear-gradient(to right, #ef4444, #dc2626)",
+            background: "linear-gradient(to right, #9370DB, #6A5ACD)",
             width: 36,
             height: 36,
             borderRadius: 10,
@@ -689,11 +769,11 @@ function Sidebar({
             flex: "0 0 auto",
           }}
         >
-          AI
+          🌙
         </div>
         {!collapsed && (
-          <div style={{ fontSize: 18, fontWeight: 800, background: "linear-gradient(to right,#ef4444,#dc2626)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-            AI 추천서
+          <div style={{ fontSize: 18, fontWeight: 800, background: "linear-gradient(to right, #9370DB, #FFD700)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+            Moonlight Letter
           </div>
         )}
         <button
@@ -709,7 +789,7 @@ function Sidebar({
             color: cMuted,
             fontSize: 14
           }}
-          title={collapsed ? "펼치기" : "접기"}
+          title={collapsed ? t.sidebar.expand : t.sidebar.collapse}
         >
           {collapsed ? "»" : "«"}
         </button>
@@ -718,28 +798,31 @@ function Sidebar({
       {/* 메뉴 */}
       <div style={{ padding: "8px 6px", overflowY: "auto", flex: 1 }}>
         {/* 홈 (상위) */}
-        <Item label="홈" Icon={HomeIcon} onClick={onGoHome} active={activeMain === "home"} top />
+        <Item label={t.sidebar.home} Icon={HomeIcon} onClick={onGoHome} active={activeMain === "home"} top />
+
+        {/* 상세정보 권한 관리 (독립 메뉴) */}
+        <Item label={t.sidebar.permissions} Icon={KeyIcon} onClick={onGoPermissions} active={activeMain === "permissions"} top />
 
         {/* 프로필 (상위 + 하위) */}
-        <Item label="프로필" Icon={UserIcon} onClick={() => onGoProfile(null)} active={activeMain === "profile"} top />
+        <Item label={t.sidebar.profile} Icon={UserIcon} onClick={() => onGoProfile(null)} active={activeMain === "profile"} top />
         {!collapsed && (
           <div style={{ marginTop: 2, marginBottom: 8 }}>
-            <Item label="내 정보"        indent={16} onClick={() => onGoProfile("info")}            active={activeMain === "profile" && activeSub === "info"} />
-            <Item label="경력"          indent={16} onClick={() => onGoProfile("experience")}      active={activeMain === "profile" && activeSub === "experience"} />
-            <Item label="수상이력"       indent={16} onClick={() => onGoProfile("awards")}          active={activeMain === "profile" && activeSub === "awards"} />
-            <Item label="자격증"         indent={16} onClick={() => onGoProfile("certifications")}  active={activeMain === "profile" && activeSub === "certifications"} />
-            <Item label="프로젝트"       indent={16} onClick={() => onGoProfile("projects")}        active={activeMain === "profile" && activeSub === "projects"} />
-            <Item label="강점"          indent={16} onClick={() => onGoProfile("strengths")}        active={activeMain === "profile" && activeSub === "strengths"} />
-            <Item label="평판"          indent={16} onClick={() => onGoProfile("reputations")}     active={activeMain === "profile" && activeSub === "reputations"} />
+            <Item label={t.sidebar.info}        indent={16} onClick={() => onGoProfile("info")}            active={activeMain === "profile" && activeSub === "info"} />
+            <Item label={t.sidebar.experience}          indent={16} onClick={() => onGoProfile("experience")}      active={activeMain === "profile" && activeSub === "experience"} />
+            <Item label={t.sidebar.awards}       indent={16} onClick={() => onGoProfile("awards")}          active={activeMain === "profile" && activeSub === "awards"} />
+            <Item label={t.sidebar.certifications}         indent={16} onClick={() => onGoProfile("certifications")}  active={activeMain === "profile" && activeSub === "certifications"} />
+            <Item label={t.sidebar.projects}       indent={16} onClick={() => onGoProfile("projects")}        active={activeMain === "profile" && activeSub === "projects"} />
+            <Item label={t.sidebar.strengths}          indent={16} onClick={() => onGoProfile("strengths")}        active={activeMain === "profile" && activeSub === "strengths"} />
+            <Item label={t.sidebar.reputations}      indent={16} onClick={() => onGoProfile("reputations")}     active={activeMain === "profile" && activeSub === "reputations"} />
           </div>
         )}
 
         {/* 보관함 (상위 + 하위) */}
-        <Item label="보관함" Icon={DrawerIcon} onClick={() => onGoArchive("recommendations")} active={activeMain === "archive"} top />
+        <Item label={t.sidebar.archive} Icon={DrawerIcon} onClick={() => onGoArchive("recommendations")} active={activeMain === "archive"} top />
         {!collapsed && (
           <div style={{ marginTop: 2, marginBottom: 8 }}>
-            <Item label="작성한 추천서" indent={16} onClick={() => onGoArchive("recommendations")} active={activeMain === "archive" && archiveSub === "recommendations"} />
-            <Item label="작성한 평판" indent={16} onClick={() => onGoArchive("reputations")} active={activeMain === "archive" && archiveSub === "reputations"} />
+            <Item label={t.sidebar.sentRecommendations} indent={16} onClick={() => onGoArchive("recommendations")} active={activeMain === "archive" && archiveSub === "recommendations"} />
+            <Item label={t.sidebar.sentReputations} indent={16} onClick={() => onGoArchive("reputations")} active={activeMain === "archive" && archiveSub === "reputations"} />
           </div>
         )}
       </div>
@@ -756,7 +839,7 @@ function Sidebar({
         >
           <div
             style={{
-              background: "linear-gradient(to right, #ef4444, #dc2626)",
+              background: "linear-gradient(to right, #9370DB, #6A5ACD)",
               width: 32,
               height: 32,
               borderRadius: 8,
@@ -773,27 +856,65 @@ function Sidebar({
           </div>
           {!collapsed && (
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 600, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: darkMode ? "#e0e0e0" : "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {user?.name || user?.nickname || "-"}
               </div>
-              <div style={{ fontSize: 12, color: "#6b7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <div style={{ fontSize: 12, color: darkMode ? "#a0a0a0" : "#6b7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {user?.email || "-"}
               </div>
             </div>
           )}
         </div>
         
-        {/* 다국어 버튼 */}
-        {onLanguageChange && (
+        {/* 다국어 & 다크모드 버튼 (나란히) */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          {onLanguageChange && (
+            <button
+              onClick={() => onLanguageChange(language === 'ko' ? 'en' : 'ko')}
+              style={{
+                flex: 1,
+                padding: collapsed ? "8px 4px" : "10px 12px",
+                borderRadius: 10,
+                border: `2px solid ${darkMode ? '#9370DB' : '#9370DB'}`,
+                background: darkMode ? "#1a1a1a" : "white",
+                color: "#9370DB",
+                fontWeight: 700,
+                cursor: "pointer",
+                fontSize: collapsed ? 11 : 14,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                textAlign: "center",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: collapsed ? 0 : 6,
+                transition: "all 0.2s",
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.background = "#9370DB";
+                e.target.style.color = "white";
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.background = darkMode ? "#1a1a1a" : "white";
+                e.target.style.color = "#9370DB";
+              }}
+              title={collapsed ? (language === 'ko' ? 'EN' : '한') : (language === 'ko' ? 'English' : '한국어')}
+            >
+              <span style={{ fontSize: collapsed ? 14 : 16 }}>🌐</span>
+              {!collapsed && <span>{language === 'ko' ? 'EN' : '한'}</span>}
+            </button>
+          )}
+
           <button
-            onClick={() => onLanguageChange(language === 'ko' ? 'en' : 'ko')}
+            onClick={onDarkModeToggle}
             style={{
-              width: "100%",
-              padding: collapsed ? "8px 8px" : "10px 12px",
+              flex: 1,
+              padding: collapsed ? "8px 4px" : "10px 12px",
               borderRadius: 10,
-              border: "2px solid #ef4444",
-              background: "white",
-              color: "#ef4444",
+              border: `2px solid ${darkMode ? '#888888' : '#6b7280'}`,
+              background: darkMode ? "#1a1a1a" : "white",
+              color: darkMode ? "#d0d0d0" : "#6b7280",
               fontWeight: 700,
               cursor: "pointer",
               fontSize: collapsed ? 11 : 14,
@@ -804,24 +925,23 @@ function Sidebar({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              gap: 8,
-              marginBottom: 8,
+              gap: collapsed ? 0 : 6,
               transition: "all 0.2s",
             }}
             onMouseEnter={(e) => {
-              e.target.style.background = "#ef4444";
+              e.target.style.background = darkMode ? "#888888" : "#6b7280";
               e.target.style.color = "white";
             }}
             onMouseLeave={(e) => {
-              e.target.style.background = "white";
-              e.target.style.color = "#ef4444";
+              e.target.style.background = darkMode ? "#1a1a1a" : "white";
+              e.target.style.color = darkMode ? "#d0d0d0" : "#6b7280";
             }}
-            title={collapsed ? (language === 'ko' ? 'EN' : '한') : (language === 'ko' ? 'English' : '한국어')}
+            title={collapsed ? (darkMode ? '☀️' : '🌙') : (darkMode ? t.sidebar.lightMode : t.sidebar.darkMode)}
           >
-            <span style={{ fontSize: collapsed ? 14 : 16 }}>🌐</span>
-            {!collapsed && <span>{language === 'ko' ? 'EN' : '한'}</span>}
+            <span style={{ fontSize: collapsed ? 14 : 16 }}>{darkMode ? '☀️' : '🌙'}</span>
+            {!collapsed && <span>{darkMode ? t.sidebar.light : t.sidebar.dark}</span>}
           </button>
-        )}
+        </div>
         
         <button
           onClick={onLogout}
@@ -829,9 +949,11 @@ function Sidebar({
             width: "100%",
             padding: collapsed ? "8px 8px" : "10px 12px",
             borderRadius: 10,
-            border: "1px solid #fecaca",
-            background: "linear-gradient(to right, #fee2e2, #fecaca)",
-            color: "#b91c1c",
+            border: darkMode ? "1px solid #9370DB" : "1px solid #9370DB",
+            background: darkMode 
+              ? "linear-gradient(135deg, #9370DB 0%, #6A5ACD 50%, #FFD700 100%)" 
+              : "linear-gradient(135deg, #f3e8ff 0%, #fef3c7 100%)",
+            color: darkMode ? "#FFD700" : "#9370DB",
             fontWeight: 700,
             cursor: "pointer",
             fontSize: collapsed ? 11 : 14,
@@ -842,11 +964,26 @@ function Sidebar({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            gap: 8
+            gap: 8,
+            transition: "all 0.3s ease",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = darkMode
+              ? "linear-gradient(135deg, #FFD700 0%, #9370DB 100%)"
+              : "linear-gradient(135deg, #9370DB 0%, #FFD700 100%)";
+            e.currentTarget.style.transform = "translateY(-2px)";
+            e.currentTarget.style.boxShadow = "0 4px 12px rgba(147, 112, 219, 0.4)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = darkMode
+              ? "linear-gradient(135deg, #9370DB 0%, #6A5ACD 50%, #FFD700 100%)"
+              : "linear-gradient(135deg, #f3e8ff 0%, #fef3c7 100%)";
+            e.currentTarget.style.transform = "translateY(0)";
+            e.currentTarget.style.boxShadow = "none";
           }}
         >
           <LogoutIcon />
-          {!collapsed && <span>로그아웃</span>}
+          {!collapsed && <span>{t.sidebar.logout}</span>}
         </button>
       </div>
     </aside>
@@ -858,8 +995,9 @@ function Sidebar({
 // -----------------------------
 // 네비게이션
 // -----------------------------
-function Navigation({ user, onLogout, language, onLanguageChange }) {
+function Navigation({ user, onLogout, language, onLanguageChange, darkMode }) {
   const t = TRANSLATIONS[language];
+  const styles = getStyles(darkMode);
   return (
     <nav style={styles.nav}>
       <div
@@ -876,7 +1014,7 @@ function Navigation({ user, onLogout, language, onLanguageChange }) {
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           <div
             style={{
-              ...styles.gradientRed,
+              background: "linear-gradient(to right, #9370DB, #6A5ACD)",
               width: "40px",
               height: "40px",
               borderRadius: "12px",
@@ -903,7 +1041,7 @@ function Navigation({ user, onLogout, language, onLanguageChange }) {
             style={{
               fontSize: "24px",
               fontWeight: "bold",
-              background: "linear-gradient(to right, #ef4444, #dc2626)",
+              background: "linear-gradient(to right, #9370DB, #6A5ACD)",
               WebkitBackgroundClip: "text",
               WebkitTextFillColor: "transparent",
             }}
@@ -931,9 +1069,9 @@ function Navigation({ user, onLogout, language, onLanguageChange }) {
                 padding: '8px 16px',
                 fontSize: '14px',
                 fontWeight: '600',
-                color: '#ef4444',
+                color: '#9370DB',
                 background: 'white',
-                border: '2px solid #ef4444',
+                border: '2px solid #9370DB',
                 borderRadius: '8px',
                 cursor: 'pointer',
                 display: 'flex',
@@ -942,12 +1080,12 @@ function Navigation({ user, onLogout, language, onLanguageChange }) {
                 transition: 'all 0.2s',
               }}
               onMouseEnter={(e) => {
-                e.target.style.background = '#ef4444';
+                e.target.style.background = '#9370DB';
                 e.target.style.color = 'white';
               }}
               onMouseLeave={(e) => {
                 e.target.style.background = 'white';
-                e.target.style.color = '#ef4444';
+                e.target.style.color = '#9370DB';
               }}
             >
               🌐 {language === 'ko' ? 'EN' : '한'}
@@ -983,7 +1121,7 @@ function Navigation({ user, onLogout, language, onLanguageChange }) {
                 >
                   {user.name?.[0] || user.nickname?.[0] || "U"}
                 </div>
-                <span style={{ fontSize: "14px", fontWeight: "500", color: "#374151" }}>
+                <span style={{ fontSize: "14px", fontWeight: "500", color: "#6b7280" }}>
                   {user.name || user.nickname}
                 </span>
               </div>
@@ -993,7 +1131,7 @@ function Navigation({ user, onLogout, language, onLanguageChange }) {
                   padding: "8px 16px",
                   fontSize: "14px",
                   fontWeight: "500",
-                  color: "#dc2626",
+                  color: "#9370DB",
                   background: "transparent",
                   border: "none",
                   cursor: "pointer",
@@ -1014,7 +1152,7 @@ function Navigation({ user, onLogout, language, onLanguageChange }) {
 // 메인 App
 // -----------------------------
 export default function App() {
-  const [authMode, setAuthMode] = useState("login"); // "login" | "signup"
+  const [authMode, setAuthMode] = useState("landing"); // "landing" | "login" | "signup"
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
 
@@ -1042,8 +1180,12 @@ export default function App() {
   const [signatureData, setSignatureData] = useState(null);
   const [signatureType, setSignatureType] = useState(null);
   const [showSignaturePad, setShowSignaturePad] = useState(false);
+  const [writingStyleAnalysis, setWritingStyleAnalysis] = useState(null);
   const [language, setLanguage] = useState(() => {
     return localStorage.getItem('language') || 'ko';
+  });
+  const [darkMode, setDarkMode] = useState(() => {
+    return localStorage.getItem('darkMode') === 'true';
   });
   
   // 평가 관련 상태
@@ -1058,7 +1200,8 @@ export default function App() {
   const [isReading, setIsReading] = useState(false);
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   const audioRef = useRef(null);
-  const [changedSections, setChangedSections] = useState([]);
+  const [changedSections, setChangedSections] = useState([]); // 줄 인덱스 배열 (레거시)
+  const [changedSentences, setChangedSentences] = useState(new Set()); // 변경된 문장의 해시 Set
   
   const t = TRANSLATIONS[language];
 
@@ -1114,6 +1257,10 @@ export default function App() {
     if (retries > 0) {
       requestAnimationFrame(() => scrollToProfileSectionWhenReady(section, retries - 1));
     }
+  }
+    function scrollToArchiveSection() {
+    const el = document.getElementById("archive-sent");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
 
@@ -1231,6 +1378,7 @@ export default function App() {
     setImprovementNotes("");
     setRefining(false);
     setShowPreview(false);
+    setWritingStyleAnalysis(null);
   };
 
   const handleLanguageChange = (newLang) => {
@@ -1238,7 +1386,22 @@ export default function App() {
     localStorage.setItem('language', newLang);
   };
 
-  // 토큰 자동 로그인
+  const handleDarkModeToggle = () => {
+    const newMode = !darkMode;
+    setDarkMode(newMode);
+    localStorage.setItem('darkMode', newMode);
+  };
+
+  // 다크모드 적용
+  useEffect(() => {
+    if (darkMode) {
+      document.body.classList.add('dark');
+    } else {
+      document.body.classList.remove('dark');
+    }
+  }, [darkMode]);
+
+  // 토큰 자동 로그인 및 초기 다크모드 적용
   useEffect(() => {
     const savedToken = localStorage.getItem("token");
     if (savedToken) {
@@ -1247,16 +1410,17 @@ export default function App() {
     }
     // 양식 목록 로드
     fetchTemplates();
+    
+    // 초기 다크모드 적용
+    const savedDarkMode = localStorage.getItem('darkMode') === 'true';
+    if (savedDarkMode) {
+      document.body.classList.add('dark');
+    }
   }, []);
 
   const fetchTemplates = async () => {
     try {
-      const response = await fetch(`${API_BASE}/templates`);
-      if (!response.ok) {
-        console.error("양식 목록 로드 실패:", response.status, response.statusText);
-        return;
-      }
-      const data = await response.json();
+      const data = await apiGet("/templates");
       console.log("양식 목록 로드 성공:", data);
       if (data && data.templates) {
         setTemplates(data.templates);
@@ -1294,6 +1458,29 @@ export default function App() {
     }));
   };
 
+  // 📄 문서 업로드로 받은 필드 처리 (음성 입력과 동일한 방식)
+  const handleDocumentUpload = (fields, extractedText) => {
+    console.log('✅ 문서 업로드 받음:', fields);
+    console.log('📄 추출된 텍스트:', extractedText);
+    
+    // 기존 값에 추가 (있으면 줄바꿈 후 추가, 없으면 새로 입력)
+    setForm(prev => ({
+      ...prev,
+      relationship: prev.relationship 
+        ? (fields.relationship ? `${prev.relationship}\n${fields.relationship}` : prev.relationship)
+        : (fields.relationship || ''),
+      strengths: prev.strengths 
+        ? (fields.strengths ? `${prev.strengths}\n${fields.strengths}` : prev.strengths)
+        : (fields.strengths || ''),
+      memorable: prev.memorable 
+        ? (fields.memorable ? `${prev.memorable}\n${fields.memorable}` : prev.memorable)
+        : (fields.memorable || ''),
+      additional_info: prev.additional_info 
+        ? (fields.additional_info ? `${prev.additional_info}\n${fields.additional_info}` : prev.additional_info)
+        : (fields.additional_info || '')
+    }));
+  };
+
   // 사용자 변경 시 UI 초기화
   useEffect(() => {
     if (user?.email) resetAllUiStates();
@@ -1302,17 +1489,12 @@ export default function App() {
   // 내 정보 조회
   const fetchUserData = async (currentToken) => {
     try {
-      const response = await fetch(`${API_BASE}/me`, {
+      const data = await apiFetch("/me", {
         headers: { Authorization: `Bearer ${currentToken}` },
       });
-      if (response.ok) {
-        const data = await response.json();
-        setUser(data.user);
-        // 사용자 서명 불러오기
-        fetchUserSignature(data.user.id, currentToken);
-      } else {
-        handleLogout();
-      }
+      setUser(data.user);
+      // 사용자 서명 불러오기
+      fetchUserSignature(data.user.id, currentToken);
     } catch {
       handleLogout();
     }
@@ -1320,15 +1502,12 @@ export default function App() {
 
   const fetchUserSignature = async (userId, currentToken) => {
     try {
-      const response = await fetch(`${API_BASE}/user-signature/${userId}`, {
+      const data = await apiFetch(`/user-signature/${userId}`, {
         headers: { Authorization: `Bearer ${currentToken || token}` },
       });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.exists) {
-          setSignatureData(data.signature_data);
-          setSignatureType(data.signature_type);
-        }
+      if (data.exists) {
+        setSignatureData(data.signature_data);
+        setSignatureType(data.signature_type);
       }
     } catch (e) {
       console.error("서명 불러오기 실패:", e);
@@ -1383,6 +1562,10 @@ export default function App() {
       });
     }
   };
+  const goPermissions = () => {
+    setCurrentView("permissions");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
   const goArchive = (sub = "recommendations") => {
     setArchiveSub(sub);
     setCurrentView("archive");
@@ -1420,44 +1603,13 @@ export default function App() {
 
   // ---- 조회/상세/추천서 생성 로직 ----
   const doLookup = async () => {
-    // 이전 검색 결과 초기화 (이메일 형식 검증 전에 먼저 초기화)
     setLookupLoading(true);
     setLookup(null);
     setSelectedUser(null);
-    // 이전 검색 결과의 상세정보 초기화
     setUserDetails(null);
     setShowUserDetails(false);
-    
-    // 이메일 형식 검증
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailPattern.test(nickname.trim())) {
-      setLookup({ exists: false, message: "올바른 이메일 형식으로 입력해주세요." });
-      setLookupLoading(false);
-      return;
-    }
     try {
-      const res = await fetch(`${API_BASE}/lookup`, {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({ search: nickname.trim() }),
-      });
-      if (!res.ok) {
-        if (res.status === 401) {
-          setLookup({ exists: false, message: "로그인이 필요합니다." });
-          setSelectedUser(null);
-          setLookupLoading(false);
-          return;
-        }
-        const errorData = await res.json();
-        setLookup({ exists: false, message: errorData.detail || "조회 중 오류가 발생했습니다." });
-        setSelectedUser(null);
-        setLookupLoading(false);
-        return;
-      }
-      const data = await res.json();
+      const data = await apiPost("/lookup", { search: nickname });
       setLookup(data);
 
       if (data?.exists && data?.users?.length > 0) {
@@ -1468,12 +1620,9 @@ export default function App() {
           requester_name: firstUser.nickname || firstUser.name || "",
           requester_email: firstUser.email || "",
         }));
-      } else {
-        setSelectedUser(null);
       }
     } catch {
       setLookup({ exists: false, message: "서버 연결 오류" });
-      setSelectedUser(null);
     } finally {
       setLookupLoading(false);
     }
@@ -1482,15 +1631,28 @@ export default function App() {
   const fetchUserDetails = async (userId) => {
     setLoadingUserDetails(true);
     try {
-      const res = await fetch(`${API_BASE}/user-details/${userId}`, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      });
-      const data = await res.json();
+      // 권한 확인을 위해 현재 사용자 이메일 추가
+      const requesterEmail = user?.email || '';
+      const data = await apiGet(`/user-details/${userId}?requester_email=${encodeURIComponent(requesterEmail)}`);
+      console.log("사용자 상세정보:", data);
       setUserDetails(data);
       setShowUserDetails(true);
-    } catch {
-      alert("사용자 상세 정보를 불러오는데 실패했습니다.");
+    } catch (error) {
+      console.error("사용자 상세 정보 불러오기 오류:", error);
+      // 403 에러인 경우 특별 처리
+      if (error.message && error.message.includes("403")) {
+        setLookup({ 
+          exists: false, 
+          message: "상세정보를 볼 권한이 없습니다.\n추천받는 분께 권한을 요청하세요." 
+        });
+      } else {
+        setLookup({ 
+          exists: false, 
+          message: error.message || "사용자 상세 정보를 불러오는데 실패했습니다." 
+        });
+      }
+      setUserDetails(null);
+      setShowUserDetails(false);
     } finally {
       setLoadingUserDetails(false);
     }
@@ -1502,15 +1664,9 @@ export default function App() {
     setEvaluationScores(null);
     setEvaluationImprovements([]);
     try {
-      const response = await fetch(`${API_BASE}/evaluate-recommendation`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          recommendation_text: recommendationText
-        }),
+      const data = await apiPost("/evaluate-recommendation", {
+        recommendation_text: recommendationText
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "평가 실패");
       setEvaluationScores(data.scores);
       setEvaluationImprovements(data.improvements || []);
       console.log("평가 완료:", data);
@@ -1535,30 +1691,24 @@ export default function App() {
     setPreviousVersion(null);
     setChangedSections([]);
     try {
-      const response = await fetch(`${API_BASE}/generate-recommendation`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          recommender_name: form.recommender_name || user?.nickname || user?.name || "",
-          requester_name: form.requester_name,
-          requester_email: form.requester_email,
-          major_field: form.major_field || null,
-          relationship: form.relationship,
-          strengths: form.strengths,
-          memorable: form.memorable,
-          additional_info: form.additional_info || null,
-          tone: form.tone,
-          selected_score: form.selected_score,
-          workspace_id: form.workspace_id || null,
-          include_user_details: form.include_user_details || false,
-          word_count: form.word_count ? parseInt(form.word_count) : null,
-          template_id: form.template_id ? parseInt(form.template_id) : null,
-          signature_data: signatureData || null,
-          signature_type: signatureType || null,
-        }),
+      const data = await apiPost("/generate-recommendation", {
+        recommender_name: form.recommender_name || user?.nickname || user?.name || "",
+        requester_name: form.requester_name,
+        requester_email: form.requester_email,
+        major_field: form.major_field || null,
+        relationship: form.relationship,
+        strengths: form.strengths,
+        memorable: form.memorable,
+        additional_info: form.additional_info || null,
+        tone: form.tone,
+        selected_score: form.selected_score,
+        workspace_id: form.workspace_id || null,
+        include_user_details: form.include_user_details || false,
+        word_count: form.word_count ? parseInt(form.word_count) : null,
+        template_id: form.template_id ? parseInt(form.template_id) : null,
+        signature_data: signatureData || null,
+        signature_type: signatureType || null,
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "생성 실패");
       setRecommendation(data.recommendation);
       setEditedRecommendation(data.recommendation);
       setCurrentRecommendationId(data.id);
@@ -1579,8 +1729,8 @@ export default function App() {
     }
     setSaveLoading(true);
     try {
-      const response = await fetch(
-        `${API_BASE}/update-recommendation/${currentRecommendationId}`,
+      const data = await apiFetch(
+        `/update-recommendation/${currentRecommendationId}`,
         {
           method: "PATCH",
           headers: {
@@ -1590,8 +1740,6 @@ export default function App() {
           body: JSON.stringify({ content: editedRecommendation }),
         }
       );
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "저장 실패");
       alert("추천서가 저장되었습니다.");
       setRecommendation(editedRecommendation);
     } catch (err) {
@@ -1619,29 +1767,67 @@ export default function App() {
         improvements: evaluationImprovements
       });
       
-      const response = await fetch(`${API_BASE}/refine-recommendation`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          current_content: editedRecommendation,
-          improvement_notes: notes,
-          tone: form.tone,
-          selected_score: form.selected_score,
-        }),
+      const data = await apiPost("/refine-recommendation", {
+        current_content: editedRecommendation,
+        improvement_notes: notes,
+        tone: form.tone,
+        selected_score: form.selected_score,
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "최종 완성 실패");
       
-      // 변경 사항 감지 (간단한 diff)
-      const oldLines = editedRecommendation.split('\n');
-      const newLines = data.refined_content.split('\n');
-      const changed = [];
-      for (let i = 0; i < Math.max(oldLines.length, newLines.length); i++) {
-        if (oldLines[i] !== newLines[i]) {
-          changed.push(i);
+      // 변경 사항 감지 (문장 단위 diff)
+      // 문장 분리 함수 (마침표, 느낌표, 물음표로 분리)
+      const splitIntoSentences = (text) => {
+        if (!text) return [];
+        // 줄바꿈을 공백으로 변환 후 문장 분리
+        const normalized = text.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+        // 문장 종결 기호로 분리 (한국어: . ! ? / 영어: . ! ?)
+        // 정규식: 문장 종결 기호 뒤에 공백이나 줄바꿈이 오는 경우
+        const sentenceEndings = /([.!?。！？])\s+/g;
+        const sentences = [];
+        let lastIndex = 0;
+        let match;
+        
+        while ((match = sentenceEndings.exec(normalized)) !== null) {
+          const sentence = normalized.substring(lastIndex, match.index + 1).trim();
+          if (sentence) {
+            sentences.push(sentence);
+          }
+          lastIndex = match.index + match[0].length;
         }
-      }
-      setChangedSections(changed);
+        
+        // 마지막 문장 추가
+        const lastSentence = normalized.substring(lastIndex).trim();
+        if (lastSentence) {
+          sentences.push(lastSentence);
+        }
+        
+        return sentences;
+      };
+      
+      const oldSentences = splitIntoSentences(editedRecommendation);
+      const newSentences = splitIntoSentences(data.refined_content);
+      
+      // 변경된 문장 찾기: 새 문장 중 이전에 없던 것들
+      const changedSentenceSet = new Set();
+      
+      // 새 문장들을 정규화하여 비교 (공백 제거, 소문자 변환)
+      const normalizeSentence = (s) => s.replace(/\s+/g, '').toLowerCase();
+      
+      // 새 문장 중 이전에 없던 것들을 변경된 것으로 표시
+      newSentences.forEach((newSentence) => {
+        const normalizedNew = normalizeSentence(newSentence);
+        const found = oldSentences.some(oldSentence => {
+          const normalizedOld = normalizeSentence(oldSentence);
+          return normalizedOld === normalizedNew;
+        });
+        if (!found) {
+          changedSentenceSet.add(newSentence);
+        }
+      });
+      
+      setChangedSentences(changedSentenceSet);
+      // 레거시 호환성을 위해 빈 배열로 설정
+      setChangedSections([]);
       
       setEditedRecommendation(data.refined_content);
       setRecommendation(data.refined_content);
@@ -1683,8 +1869,9 @@ export default function App() {
     
     setDownloadingPdf(true);
     try {
+      // PDF는 blob이므로 직접 fetch 사용
+      const API_BASE = import.meta?.env?.VITE_API_BASE || (window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1" ? "" : "http://localhost:8000");
       const response = await fetch(`${API_BASE}/download-pdf/${currentRecommendationId}`, {
-        method: "GET",
         headers: {
           "Authorization": `Bearer ${token}`
         }
@@ -1741,6 +1928,8 @@ export default function App() {
       console.log('📖 TTS 요청 시작 (텍스트 길이:', textToRead.length, ')');
       const startTime = Date.now();
       
+      // TTS는 blob 응답이므로 직접 fetch 사용
+      const API_BASE = import.meta?.env?.VITE_API_BASE || (window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1" ? "" : "http://localhost:8000");
       const response = await fetch(`${API_BASE}/read-recommendation`, {
         method: "POST",
         headers: {
@@ -1809,12 +1998,7 @@ export default function App() {
     
     setSharingLink(true);
     try {
-      const response = await fetch(`${API_BASE}/share-recommendation/${currentRecommendationId}`, {
-        method: "GET"
-      });
-      
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "공유 링크 생성 실패");
+      const data = await apiGet(`/share-recommendation/${currentRecommendationId}`);
       
       navigator.clipboard.writeText(data.share_url);
       alert("공유 링크가 클립보드에 복사되었습니다!");
@@ -1825,7 +2009,34 @@ export default function App() {
     }
   };
 
-  // 추천서 내용을 파싱하여 정렬된 JSX로 변환
+  // 문장 분리 헬퍼 함수 (formatRecommendation 내부에서 사용)
+  const splitIntoSentencesForDisplay = (text) => {
+    if (!text) return [];
+    // 문장 종결 기호로 분리 (한국어: . ! ? / 영어: . ! ?)
+    // 정규식: 문장 종결 기호 뒤에 공백이 오는 경우
+    const sentenceEndings = /([.!?。！？])\s+/g;
+    const sentences = [];
+    let lastIndex = 0;
+    let match;
+    
+    while ((match = sentenceEndings.exec(text)) !== null) {
+      const sentence = text.substring(lastIndex, match.index + 1).trim();
+      if (sentence) {
+        sentences.push(sentence);
+      }
+      lastIndex = match.index + match[0].length;
+    }
+    
+    // 마지막 문장 추가
+    const lastSentence = text.substring(lastIndex).trim();
+    if (lastSentence) {
+      sentences.push(lastSentence);
+    }
+    
+    return sentences.filter(s => s.length > 0);
+  };
+  
+  // 추천서 내용을 파싱하여 정렬된 JSX로 변환 (문장 단위 하이라이트)
   const formatRecommendation = (content) => {
     if (!content) return null;
     const lines = content.split('\n');
@@ -1833,17 +2044,10 @@ export default function App() {
     
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
-      const isChanged = changedSections.includes(i);
-      const highlightStyle = isChanged ? { 
-        background: 'linear-gradient(to right, #fef3c7, #fde68a)', 
-        padding: '4px 8px', 
-        borderRadius: '4px',
-        borderLeft: '3px solid #f59e0b',
-        animation: 'highlight-fade 2s ease-in-out'
-      } : {};
       
+      // 특수 줄 처리 (제목, 날짜, 서명 등) - 하이라이트 없음
       if (i === 0 && line === '추천서') {
-        result.push(<div key={i} style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '1.5rem', marginBottom: '1rem', ...highlightStyle }}>{line}</div>);
+        result.push(<div key={i} style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '1.5rem', marginBottom: '1rem' }}>{line}</div>);
         continue;
       }
       
@@ -1853,13 +2057,13 @@ export default function App() {
       }
       
       if (/^\d{4}년\s+\d{1,2}월\s+\d{1,2}일$/.test(line)) {
-        result.push(<div key={i} style={{ textAlign: 'center', marginTop: '1.5rem', marginBottom: '0.5rem', ...highlightStyle }}>{line}</div>);
+        result.push(<div key={i} style={{ textAlign: 'center', marginTop: '1.5rem', marginBottom: '0.5rem' }}>{line}</div>);
         continue;
       }
       
       if (line.startsWith('서명:')) {
         result.push(
-          <div key={i} style={{ textAlign: 'center', marginTop: '1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', ...highlightStyle }}>
+          <div key={i} style={{ textAlign: 'center', marginTop: '1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px' }}>
             <span>서명:</span>
             {signatureData ? (
               <img 
@@ -1881,12 +2085,57 @@ export default function App() {
       
       if (line.startsWith('작성자:') || line.startsWith('소속/직위:') || 
           line.startsWith('연락처:')) {
-        result.push(<div key={i} style={{ textAlign: 'center', ...highlightStyle }}>{line}</div>);
+        result.push(<div key={i} style={{ textAlign: 'center' }}>{line}</div>);
         continue;
       }
       
+      // 일반 텍스트 줄: 문장 단위로 분리하여 하이라이트 적용
       if (line.length > 0) {
-        result.push(<div key={i} style={{ textAlign: 'left', marginBottom: '0.5rem', ...highlightStyle }}>{line}</div>);
+        const sentences = splitIntoSentencesForDisplay(line);
+        
+        if (sentences.length === 0) {
+          // 문장 분리 실패 시 전체 줄을 하나의 문장으로 처리
+          const isChanged = changedSentences.has(line);
+          const highlightStyle = isChanged ? { 
+            background: 'linear-gradient(to right, #fef3c7, #fde68a)', 
+            padding: '2px 4px', 
+            borderRadius: '4px',
+            borderLeft: '3px solid #f59e0b',
+            animation: 'highlight-fade 2s ease-in-out',
+            display: 'inline'
+          } : {};
+          result.push(
+            <div key={i} style={{ textAlign: 'left', marginBottom: '0.5rem' }}>
+              <span style={highlightStyle}>{line}</span>
+            </div>
+          );
+        } else {
+          // 문장별로 분리하여 각각 하이라이트 적용
+          const sentenceElements = [];
+          sentences.forEach((sentence, idx) => {
+            const isChanged = changedSentences.has(sentence);
+            const highlightStyle = isChanged ? { 
+              background: 'linear-gradient(to right, #fef3c7, #fde68a)', 
+              padding: '2px 4px', 
+              borderRadius: '4px',
+              borderLeft: '3px solid #f59e0b',
+              animation: 'highlight-fade 2s ease-in-out',
+              display: 'inline'
+            } : {};
+            
+            sentenceElements.push(
+              <span key={`${i}-${idx}`} style={highlightStyle}>
+                {sentence}{idx < sentences.length - 1 ? ' ' : ''}
+              </span>
+            );
+          });
+          
+          result.push(
+            <div key={i} style={{ textAlign: 'left', marginBottom: '0.5rem' }}>
+              {sentenceElements}
+            </div>
+          );
+        }
       }
     }
     
@@ -1905,23 +2154,76 @@ export default function App() {
   // -----------------------------
   // 인증 전/후 렌더링 분기
   // -----------------------------
+  const styles = getStyles(darkMode);
+  
   if (!token || !user) {
-    return authMode === "login" ? (
-      <LoginForm
-        onLogin={handleLogin}
-        onToggleMode={() => setAuthMode("signup")}
-        language={language}
-        onLanguageChange={handleLanguageChange}
-      />
-    ) : (
-      <div style={{ ...styles.pageContainer, paddingTop: "32px" }}>
+    // 랜딩 페이지 (첫 화면)
+    if (authMode === "landing") {
+      return (
+        <LandingPage 
+          onNavigateToLogin={() => setAuthMode("login")}
+          onNavigateToSignup={() => setAuthMode("signup")}
+          darkMode={darkMode}
+        />
+      );
+    }
+    
+    // 로그인 화면
+    if (authMode === "login") {
+      return (
+        <LoginForm
+          onLogin={handleLogin}
+          onToggleMode={() => setAuthMode("signup")}
+          onBack={() => setAuthMode("landing")}
+          language={language}
+          onLanguageChange={handleLanguageChange}
+          darkMode={darkMode}
+        />
+      );
+    }
+    
+    // 회원가입 화면
+    return (
+      <div style={{ ...styles.pageContainer, paddingTop: "32px", position: "relative" }}>
+        {/* 다국어 버튼 (화면 기준 오른쪽 상단) */}
+        <button
+          onClick={() => handleLanguageChange(language === 'ko' ? 'en' : 'ko')}
+          style={{
+            position: 'absolute',
+            top: '2rem',
+            right: '2rem',
+            padding: '8px 16px',
+            fontSize: '14px',
+            fontWeight: '600',
+            color: '#9370DB',
+            background: 'white',
+            border: '2px solid #9370DB',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={(e) => {
+            e.target.style.background = '#9370DB';
+            e.target.style.color = 'white';
+          }}
+          onMouseLeave={(e) => {
+            e.target.style.background = 'white';
+            e.target.style.color = '#9370DB';
+          }}
+        >
+          🌐 {language === 'ko' ? 'EN' : '한'}
+        </button>
+        
         <div style={{ textAlign: "center", paddingTop: "16px" }}>
           <button
             onClick={() => setAuthMode("login")}
             style={{
-              background: "none",
-              border: "none",
-              color: "#ec4899",
+            background: "none",
+            border: "none",
+            color: "#9370DB",
               fontSize: "14px",
               cursor: "pointer",
               fontWeight: "600",
@@ -1932,7 +2234,7 @@ export default function App() {
             이미 계정이 있으신가요? 로그인
           </button>
         </div>
-        <SignUp />
+        <SignUp language={language} onLanguageChange={handleLanguageChange} />
       </div>
     );
   }
@@ -1950,12 +2252,15 @@ export default function App() {
           onLogout={handleLogout}
           onGoHome={goHome}
           onGoProfile={goProfile}
+          onGoPermissions={goPermissions}
           onGoArchive={goArchive}
           activeMain={currentView}
           activeSub={currentView === "profile" ? profileSection : null}
-          archiveSub={currentView === "archive" ? archiveSub : "recommendations"}
+          archiveSub={archiveSub}
           language={language}
           onLanguageChange={handleLanguageChange}
+          darkMode={darkMode}
+          onDarkModeToggle={handleDarkModeToggle}
         />
 
         <div
@@ -1967,8 +2272,10 @@ export default function App() {
             width: "100%"
           }}
         >
-          {currentView === "profile" ? (
-            <Profile user={user} token={token} initialSection={pendingProfileTarget} loading={profileLoading}
+          {currentView === "permissions" ? (
+            <Profile user={user} token={token} initialSection="permissions" loading={false} onLoaded={() => {}} permissionsOnly={true} language={language} />
+          ) : currentView === "profile" ? (
+            <Profile user={user} token={token} initialSection={pendingProfileTarget} loading={profileLoading} language={language}
               onLoaded={(ok) => {
                 const finish = () => {
                   setProfileLoading(false);
@@ -1994,7 +2301,8 @@ export default function App() {
               token={token} 
               onBackHome={goHome} 
               initialTab={archiveSub}
-              onTabChange={(tab) => setArchiveSub(tab)}
+              onTabChange={setArchiveSub}
+              language={language}
             />
           ) : (
             <>
@@ -2005,9 +2313,11 @@ export default function App() {
                     fontSize: "3rem",
                     fontWeight: "bold",
                     marginBottom: "1rem",
-                    background: "linear-gradient(to right, #ef4444, #dc2626, #f43f5e)",
+                    background: "linear-gradient(135deg, #6A5ACD 0%, #8B5CF6 45%, #FFD700 75%, #FFA500 100%)",
                     WebkitBackgroundClip: "text",
                     WebkitTextFillColor: "transparent",
+                    backgroundClip: "text",
+                    filter: "drop-shadow(0 2px 8px rgba(106, 90, 205, 0.5))",
                   }}
                 >
                   {t.main.title}
@@ -2015,7 +2325,7 @@ export default function App() {
                 <p
                   style={{
                     fontSize: "1.25rem",
-                    color: "#6b7280",
+                    color: styles.textSecondary,
                     maxWidth: "600px",
                     margin: "0 auto",
                   }}
@@ -2027,10 +2337,10 @@ export default function App() {
               {/* 조회 섹션 */}
               <div id="lookup" style={{ maxWidth: "900px", margin: "0 auto 2rem" }}>
                 <div style={styles.card}>
-                  <h2 style={{ fontSize: "1.5rem", fontWeight: "bold", marginBottom: "1rem" }}>
+                  <h2 style={{ fontSize: "1.5rem", fontWeight: "bold", marginBottom: "1rem", color: styles.textPrimary }}>
                     {t.lookup.title}
                   </h2>
-                  <p style={{ fontSize: "0.875rem", color: "#6b7280", marginBottom: "1rem" }}>
+                  <p style={{ fontSize: "0.875rem", color: styles.textSecondary, marginBottom: "1rem" }}>
                     {t.lookup.subtitle}
                   </p>
 
@@ -2063,9 +2373,9 @@ export default function App() {
                       style={{
                         padding: "1rem",
                         borderRadius: "12px",
-                        background: "#fef2f2",
-                        border: "2px solid #fecaca",
-                        color: "#dc2626",
+                        background: "#f3e8ff",
+                        border: "2px solid #9370DB",
+                        color: "#6A5ACD",
                       }}
                     >
                       {lookup.message || "DB에 없는 데이터입니다."}
@@ -2078,32 +2388,66 @@ export default function App() {
                         style={{
                           padding: "1.5rem",
                           borderRadius: "12px",
-                          background: "linear-gradient(to right, #fee2e2, #fecaca)",
-                          border: "2px solid #fca5a5",
+                          background: "#faf5ff",
+                          border: "2px solid #e9d5ff",
                         }}
                       >
-                        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                        <h3 style={{ 
+                          fontSize: "1.125rem", 
+                          fontWeight: "bold", 
+                          marginBottom: "1rem",
+                          color: "#6b7280"
+                        }}>
+                          검색 결과
+                        </h3>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                           {lookup.users.map((c) => (
                             <div
                               key={c.id}
+                              onClick={() => {
+                                setSelectedUser(c);
+                                setForm((f) => ({
+                                  ...f,
+                                  requester_name: c.nickname || c.name,
+                                  requester_email: c.email,
+                                }));
+                              }}
                               style={{
+                                padding: "12px 16px",
+                                background: "white",
+                                borderRadius: "8px",
+                                border: selectedUser?.id === c.id ? "2px solid #9370DB" : "1px solid #e5e7eb",
                                 display: "flex",
                                 alignItems: "center",
                                 gap: "12px",
-                                padding: "1rem",
-                                borderRadius: "12px",
-                                background: selectedUser?.id === c.id ? "#fee2e2" : "white",
-                                border:
-                                  selectedUser?.id === c.id
-                                    ? "2px solid #ef4444"
-                                    : "2px solid #e5e7eb",
+                                cursor: "pointer",
+                                transition: "all 0.2s",
                               }}
                             >
+                              <div
+                                style={{
+                                  width: "40px",
+                                  height: "40px",
+                                  borderRadius: "8px",
+                                  background: "#e5e7eb",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  color: "#6b7280",
+                                  fontWeight: "700",
+                                  fontSize: "16px",
+                                  flexShrink: 0,
+                                }}
+                              >
+                                👤
+                              </div>
                               <div style={{ flex: 1 }}>
-                                <div style={{ fontWeight: "600", color: "#1f2937" }}>
-                                  {c.name} / {c.nickname}
+                                <div style={{ fontWeight: "600", color: "#1f2937", fontSize: "0.95rem" }}>
+                                  {c.name || c.nickname}
                                 </div>
-                                <div style={{ fontSize: "0.875rem", color: "#6b7280" }}>{c.email}</div>
+                                <div style={{ fontSize: "0.875rem", color: "#6b7280", marginTop: "2px" }}>
+                                  {c.email}
+                                </div>
                               </div>
                             </div>
                           ))}
@@ -2118,15 +2462,15 @@ export default function App() {
                         marginTop: "1.5rem",
                         padding: "1.5rem",
                         borderRadius: "12px",
-                        background: "#f3f4f6",
-                        border: "2px solid #e5e7eb",
+                        background: "#faf5ff",
+                        border: "2px solid #e9d5ff",
                       }}
                     >
                       <h3 style={{ 
                         fontSize: "1.125rem", 
                         fontWeight: "bold", 
                         marginBottom: "1rem",
-                        color: "#374151"
+                        color: "#6b7280"
                       }}>
                         🏢 소속 회사
                       </h3>
@@ -2234,7 +2578,7 @@ export default function App() {
                         fontSize: "1rem",
                         fontWeight: "bold",
                         marginBottom: "0.75rem",
-                        color: "#ef4444",
+                        color: "#9370DB",
                       }}
                     >
                       💼 경력
@@ -2284,7 +2628,7 @@ export default function App() {
                         fontSize: "1rem",
                         fontWeight: "bold",
                         marginBottom: "0.75rem",
-                        color: "#ef4444",
+                        color: "#9370DB",
                       }}
                     >
                       🏆 수상 이력
@@ -2334,7 +2678,7 @@ export default function App() {
                         fontSize: "1rem",
                         fontWeight: "bold",
                         marginBottom: "0.75rem",
-                        color: "#ef4444",
+                        color: "#9370DB",
                       }}
                     >
                       📜 자격증
@@ -2390,7 +2734,7 @@ export default function App() {
                         fontSize: "1rem",
                         fontWeight: "bold",
                         marginBottom: "0.75rem",
-                        color: "#ef4444",
+                        color: "#9370DB",
                       }}
                     >
                       🚀 프로젝트
@@ -2448,8 +2792,8 @@ export default function App() {
                                 borderRadius: "6px",
                               }}
                             >
-                              <strong style={{ color: "#991b1b" }}>성과:</strong>{" "}
-                              <span style={{ color: "#991b1b" }}>{proj.achievement}</span>
+                              <strong style={{ color: "#7c3aed" }}>성과:</strong>{" "}
+                              <span style={{ color: "#7c3aed" }}>{proj.achievement}</span>
                             </div>
                           )}
                           {proj.url && (
@@ -2459,7 +2803,7 @@ export default function App() {
                               rel="noopener noreferrer"
                               style={{
                                 fontSize: "0.75rem",
-                                color: "#ef4444",
+                                color: "#9370DB",
                                 textDecoration: "underline",
                               }}
                             >
@@ -2480,7 +2824,7 @@ export default function App() {
                         fontSize: "1rem",
                         fontWeight: "bold",
                         marginBottom: "0.75rem",
-                        color: "#ef4444",
+                        color: "#9370DB",
                       }}
                     >
                       ⭐ 강점
@@ -2511,7 +2855,7 @@ export default function App() {
                                     padding: "4px 12px",
                                     borderRadius: "12px",
                                     background: "#fee2e2",
-                                    color: "#991b1b",
+                                    color: "#7c3aed",
                                     fontSize: "0.75rem",
                                     fontWeight: "600",
                                   }}
@@ -2541,7 +2885,7 @@ export default function App() {
                         fontSize: "1rem",
                         fontWeight: "bold",
                         marginBottom: "0.75rem",
-                        color: "#ef4444",
+                        color: "#9370DB",
                       }}
                     >
                       💬 평판
@@ -2573,7 +2917,7 @@ export default function App() {
                                   padding: "2px 8px",
                                   borderRadius: "8px",
                                   background: "#fee2e2",
-                                  color: "#991b1b",
+                                  color: "#7c3aed",
                                   fontSize: "0.75rem",
                                   fontWeight: "600",
                                 }}
@@ -2583,7 +2927,7 @@ export default function App() {
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                               {[...Array(rep.rating)].map((_, idx) => (
-                                <span key={idx} style={{ color: "#ef4444" }}>
+                                <span key={idx} style={{ color: "#9370DB" }}>
                                   ★
                                 </span>
                               ))}
@@ -2641,17 +2985,18 @@ export default function App() {
                     gap: "16px"
                   }}>
                     <div style={{ flex: "1", minWidth: "250px" }}>
-                      <h2 style={{ fontSize: "1.5rem", fontWeight: "bold", marginBottom: "0.5rem" }}>
+                      <h2 style={{ fontSize: "1.5rem", fontWeight: "bold", marginBottom: "0.5rem", color: styles.textPrimary }}>
                         {t.form.title}
                       </h2>
-                      <p style={{ fontSize: "0.875rem", color: "#6b7280" }}>
+                      <p style={{ fontSize: "0.875rem", color: styles.textSecondary }}>
                         {t.form.subtitle}
                       </p>
                     </div>
                     
-                    {/* 🎤 음성 입력 버튼 */}
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                      <VoiceInputButton onFieldsReceived={handleVoiceInput} />
+                    {/* 🎤 음성 입력 & 📄 문서 업로드 버튼 */}
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      <VoiceInputButton onFieldsReceived={handleVoiceInput} language={language} />
+                      <DocumentUploadButton onFieldsReceived={handleDocumentUpload} language={language} />
                     </div>
                   </div>
 
@@ -2846,7 +3191,7 @@ export default function App() {
                     type="checkbox"
                     checked={form.include_user_details}
                     onChange={(e) => setForm({ ...form, include_user_details: e.target.checked })}
-                    style={{ width: "20px", height: "20px", cursor: "pointer", accentColor: "#ef4444" }}
+                    style={{ width: "20px", height: "20px", cursor: "pointer", accentColor: "#9370DB" }}
                   />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: "0.95rem", fontWeight: "600", color: "#92400e", marginBottom: "4px" }}>
@@ -2860,10 +3205,181 @@ export default function App() {
               </div>
             )}
 
+            {/* 문체 학습 섹션 */}
+            <div style={{ marginTop: "1.5rem" }}>
+              <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "600", marginBottom: "8px" }}>
+                📝 문체 학습 (선택)
+              </label>
+              <input
+                type="file"
+                accept=".txt,.docx,.pdf"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  
+                  const formData = new FormData();
+                  formData.append('file', file);
+                  
+                  try {
+                    // FormData는 직접 fetch 사용
+                    const API_BASE = import.meta?.env?.VITE_API_BASE || (window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1" ? "" : "http://localhost:8000");
+                    const response = await fetch(`${API_BASE}/upload-writing-sample`, {
+                      method: 'POST',
+                      headers: {
+                        'Authorization': `Bearer ${token}`
+                      },
+                      body: formData
+                    });
+                    
+                    if (response.ok) {
+                      const data = await response.json();
+                      setWritingStyleAnalysis(data.style_analysis);
+                    } else {
+                      const error = await response.json();
+                      alert(`❌ 오류: ${error.detail}`);
+                    }
+                  } catch (error) {
+                    console.error('문체 업로드 오류:', error);
+                    alert('❌ 업로드 실패');
+                  }
+                }}
+                style={{
+                  ...styles.input,
+                  cursor: "pointer",
+                  padding: "8px"
+                }}
+              />
+              <p style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: "4px" }}>
+                작성자의 글(문서, 일기, 블로그 등)을 업로드하면 AI가 문체를 학습해서 자연스러운 추천서를 생성합니다
+              </p>
+              
+              {/* 문체 분석 결과 표시 */}
+              {writingStyleAnalysis && (
+                <div style={{
+                  marginTop: "1rem",
+                  padding: "1.5rem",
+                  background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                  borderRadius: "12px",
+                  color: "white",
+                  boxShadow: "0 4px 6px rgba(0,0,0,0.1)"
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+                    <h4 style={{ margin: 0, fontSize: "1rem", fontWeight: "600" }}>
+                      ✅ 문체 분석 완료
+                    </h4>
+                    <button
+                      onClick={() => setWritingStyleAnalysis(null)}
+                      style={{
+                        background: "rgba(255,255,255,0.2)",
+                        border: "none",
+                        color: "white",
+                        borderRadius: "50%",
+                        width: "24px",
+                        height: "24px",
+                        cursor: "pointer",
+                        fontSize: "1rem"
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  
+                  <div style={{ display: "grid", gap: "0.75rem", fontSize: "0.875rem" }}>
+                    <div style={{ background: "rgba(255,255,255,0.1)", padding: "0.75rem", borderRadius: "8px" }}>
+                      <strong>🎭 어조:</strong> {writingStyleAnalysis.tone}
+                    </div>
+                    
+                    <div style={{ background: "rgba(255,255,255,0.1)", padding: "0.75rem", borderRadius: "8px" }}>
+                      <strong>📏 문장 길이:</strong> {writingStyleAnalysis.sentence_length}
+                    </div>
+                    
+                    <div style={{ background: "rgba(255,255,255,0.1)", padding: "0.75rem", borderRadius: "8px" }}>
+                      <strong>📚 어휘 수준:</strong> {writingStyleAnalysis.vocabulary_level}
+                    </div>
+                    
+                    {writingStyleAnalysis.sentence_endings && (
+                      <div style={{ background: "rgba(255,255,255,0.1)", padding: "0.75rem", borderRadius: "8px" }}>
+                        <strong>✍️ 문장 끝맺음:</strong>
+                        <div style={{ marginTop: "0.5rem", display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                          {writingStyleAnalysis.sentence_endings.map((ending, idx) => (
+                            <span key={idx} style={{ 
+                              background: "rgba(255,255,255,0.2)", 
+                              padding: "0.25rem 0.5rem", 
+                              borderRadius: "4px",
+                              fontSize: "0.8rem"
+                            }}>
+                              {ending}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {writingStyleAnalysis.connectors && (
+                      <div style={{ background: "rgba(255,255,255,0.1)", padding: "0.75rem", borderRadius: "8px" }}>
+                        <strong>🔗 연결어:</strong>
+                        <div style={{ marginTop: "0.5rem", display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                          {writingStyleAnalysis.connectors.map((connector, idx) => (
+                            <span key={idx} style={{ 
+                              background: "rgba(255,255,255,0.2)", 
+                              padding: "0.25rem 0.5rem", 
+                              borderRadius: "4px",
+                              fontSize: "0.8rem"
+                            }}>
+                              {connector}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {writingStyleAnalysis.common_phrases && (
+                      <div style={{ background: "rgba(255,255,255,0.1)", padding: "0.75rem", borderRadius: "8px" }}>
+                        <strong>💬 특징적 표현:</strong>
+                        <div style={{ marginTop: "0.5rem", display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                          {writingStyleAnalysis.common_phrases.map((phrase, idx) => (
+                            <span key={idx} style={{ 
+                              background: "rgba(255,255,255,0.2)", 
+                              padding: "0.25rem 0.5rem", 
+                              borderRadius: "4px",
+                              fontSize: "0.8rem"
+                            }}>
+                              {phrase}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {writingStyleAnalysis.paragraph_style && (
+                      <div style={{ background: "rgba(255,255,255,0.1)", padding: "0.75rem", borderRadius: "8px" }}>
+                        <strong>📝 문단 스타일:</strong> {writingStyleAnalysis.paragraph_style}
+                      </div>
+                    )}
+                    
+                    {writingStyleAnalysis.characteristics && (
+                      <div style={{ background: "rgba(255,255,255,0.1)", padding: "0.75rem", borderRadius: "8px" }}>
+                        <strong>⭐ 문체 특징:</strong>
+                        <ul style={{ margin: "0.5rem 0 0 0", paddingLeft: "1.5rem" }}>
+                          {writingStyleAnalysis.characteristics.map((char, idx) => (
+                            <li key={idx} style={{ marginTop: "0.25rem" }}>{char}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <p style={{ marginTop: "1rem", fontSize: "0.75rem", opacity: 0.9, marginBottom: 0 }}>
+                    💡 이 문체 분석 결과가 추천서 생성에 자동으로 반영됩니다!
+                  </p>
+                </div>
+              )}
+            </div>
+
             {/* 서명 패드 */}
             <div style={{ marginTop: "1.5rem", padding: "1.5rem", borderRadius: "12px", background: "#f9fafb", border: "2px dashed #d1d5db" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-                <h4 style={{ fontSize: "1rem", fontWeight: "600", color: "#374151" }}>
+                <h4 style={{ fontSize: "1rem", fontWeight: "600", color: "#6b7280" }}>
                   ✍️ 서명 {signatureData ? "✅" : "(선택사항)"}
                 </h4>
                 <button
@@ -2873,9 +3389,9 @@ export default function App() {
                     padding: "6px 12px",
                     fontSize: "0.875rem",
                     fontWeight: "500",
-                    color: "#ef4444",
+                    color: "#9370DB",
                     background: "white",
-                    border: "1px solid #fca5a5",
+                    border: "2px solid #9370DB",
                     borderRadius: "6px",
                     cursor: "pointer"
                   }}
@@ -2983,7 +3499,7 @@ export default function App() {
                         fontSize: "0.875rem",
                         fontWeight: "600",
                         color: "white",
-                        background: "#f44336",
+                        background: "#9370DB",
                         border: "none",
                         borderRadius: "8px",
                         cursor: "pointer"
@@ -3058,8 +3574,8 @@ export default function App() {
                   marginTop: "2rem",
                   padding: "1.5rem",
                   borderRadius: "12px",
-                  background: "linear-gradient(to bottom right, #fee2e2, #fecaca)",
-                  border: "2px solid #fca5a5",
+                  background: "linear-gradient(135deg, #f3e8ff, #e9d5ff)",
+                  border: "2px solid #c084fc",
                 }}
               >
                 <div
@@ -3072,8 +3588,8 @@ export default function App() {
                     gap: "8px",
                   }}
                 >
-                  <h3 style={{ fontSize: "1.25rem", fontWeight: "bold", color: "#991b1b" }}>
-                    {t.form.generatedTitle} ({t.scoreLabels[form.selected_score] || form.selected_score} · {t.tones[form.tone]})
+                  <h3 style={{ fontSize: "1.25rem", fontWeight: "bold", color: "#9370DB" }}>
+                    {t.form.generatedTitle} ({form.selected_score}{language === 'ko' ? '점' : ''} · {t.tones[form.tone]})
                   </h3>
                   <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                     <button
@@ -3083,9 +3599,9 @@ export default function App() {
                         padding: "8px 16px", 
                         fontSize: "0.875rem", 
                         fontWeight: "600", 
-                        color: showPreview ? "white" : "#ef4444", 
-                        background: showPreview ? "linear-gradient(to right, #ef4444, #dc2626)" : "white", 
-                        border: "2px solid #fca5a5", 
+                        color: showPreview ? "white" : "#9370DB", 
+                        background: showPreview ? "linear-gradient(to right, #9370DB, #FFD700)" : "white", 
+                        border: "2px solid #c084fc", 
                         borderRadius: "8px", 
                         cursor: "pointer" 
                       }}
@@ -3102,9 +3618,9 @@ export default function App() {
                         padding: "8px 16px",
                         fontSize: "0.875rem",
                         fontWeight: "600",
-                        color: "#ef4444",
+                        color: "#9370DB",
                         background: "white",
-                        border: "2px solid #fca5a5",
+                        border: "2px solid #9370DB",
                         borderRadius: "8px",
                         cursor: "pointer",
                       }}
@@ -3119,9 +3635,9 @@ export default function App() {
                         padding: "8px 16px",
                         fontSize: "0.875rem",
                         fontWeight: "600",
-                        color: "#10b981",
+                        color: "#1f2937",
                         background: "white",
-                        border: "2px solid #10b981",
+                        border: "2px solid #1f2937",
                         borderRadius: "8px",
                         cursor: downloadingPdf ? "not-allowed" : "pointer",
                         opacity: downloadingPdf ? 0.7 : 1
@@ -3173,9 +3689,9 @@ export default function App() {
                         padding: "8px 16px",
                         fontSize: "0.875rem",
                         fontWeight: "600",
-                        color: isGeneratingAudio ? "#9ca3af" : (isReading ? "#ef4444" : "#8b5cf6"),
+                        color: isGeneratingAudio ? "#9ca3af" : (isReading ? "#9370DB" : "#8b5cf6"),
                         background: "white",
-                        border: `2px solid ${isGeneratingAudio ? "#9ca3af" : (isReading ? "#ef4444" : "#8b5cf6")}`,
+                        border: `2px solid ${isGeneratingAudio ? "#9ca3af" : (isReading ? "#9370DB" : "#8b5cf6")}`,
                         borderRadius: "8px",
                         cursor: isGeneratingAudio ? "not-allowed" : "pointer",
                         opacity: isGeneratingAudio ? 0.7 : 1,
@@ -3286,11 +3802,11 @@ export default function App() {
                         fontSize: "1rem",
                         fontWeight: "600",
                         color: "white",
-                        background: "linear-gradient(to right, #10b981, #059669)",
+                        background: "linear-gradient(to right, #9370DB, #7c3aed)",
                         border: "none",
                         borderRadius: "12px",
                         cursor: "pointer",
-                        boxShadow: "0 4px 6px rgba(16, 185, 129, 0.3)",
+                        boxShadow: "0 4px 6px rgba(147, 112, 219, 0.3)",
                         transition: "all 0.2s"
                       }}
                       onMouseOver={(e) => e.target.style.transform = "translateY(-2px)"}
@@ -3303,8 +3819,8 @@ export default function App() {
                 
                 {/* 평가 중 표시 */}
                 {evaluating && (
-                  <div style={{ marginTop: "1.5rem", textAlign: "center", padding: "1rem", background: "#f0fdf4", borderRadius: "12px", border: "2px solid #86efac" }}>
-                    <div style={{ fontSize: "1rem", color: "#059669", fontWeight: 600 }}>
+                  <div style={{ marginTop: "1.5rem", textAlign: "center", padding: "1rem", background: "linear-gradient(135deg, #ddd6fe, #c4b5fd)", borderRadius: "12px", border: "2px solid #8b5cf6" }}>
+                    <div style={{ fontSize: "1rem", color: "#5b21b6", fontWeight: 600 }}>
                       ⏳ 품질 평가 중...
                     </div>
                     <div style={{ fontSize: "0.875rem", color: "#6b7280", marginTop: "0.5rem" }}>
@@ -3330,8 +3846,8 @@ export default function App() {
                 
                 {/* 품질 평가 결과 섹션 */}
                 {evaluationScores && (
-                  <div style={{ marginTop: "2rem", padding: "2rem", borderRadius: "16px", background: "linear-gradient(to bottom, #f0fdf4, #dcfce7)", border: "2px solid #86efac" }}>
-                    <h3 style={{ fontSize: "1.25rem", fontWeight: "bold", color: "#065f46", marginBottom: "1.5rem", textAlign: "center" }}>
+                  <div style={{ marginTop: "2rem", padding: "2rem", borderRadius: "16px", background: "linear-gradient(135deg, #ddd6fe, #c4b5fd)", border: "2px solid #a78bfa" }}>
+                    <h3 style={{ fontSize: "1.25rem", fontWeight: "800", color: "#7c3aed", marginBottom: "1.5rem", textAlign: "center" }}>
                       추천서 품질 평가
                     </h3>
                     
@@ -3345,60 +3861,81 @@ export default function App() {
                         <div style={{ marginBottom: "2rem", background: "white", padding: "1.5rem", borderRadius: "12px", boxShadow: "0 2px 4px rgba(0,0,0,0.05)" }}>
                           <ResponsiveContainer width="100%" height={300}>
                             <RadarChart data={Object.entries(evaluationScores).map(([key, value]) => ({ metric: key, score: value }))}>
+                              <defs>
+                                <linearGradient id="radarEvalGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                  <stop offset="0%" stopColor="#9370DB" stopOpacity="0.8" />
+                                  <stop offset="50%" stopColor="#6A5ACD" stopOpacity="0.7" />
+                                  <stop offset="100%" stopColor="#FFD700" stopOpacity="0.6" />
+                                </linearGradient>
+                              </defs>
                               <PolarGrid stroke="#d1d5db" />
                               <PolarAngleAxis dataKey="metric" tick={{ fill: '#374151', fontSize: 13, fontWeight: 600 }} />
                               <PolarRadiusAxis angle={90} domain={[0, 5]} tick={{ fill: '#6b7280', fontSize: 11 }} />
-                              <Radar name="점수" dataKey="score" stroke="#10b981" fill="#10b981" fillOpacity={0.6} />
+                              <Radar name="점수" dataKey="score" stroke="#9370DB" fill="url(#radarEvalGradient)" fillOpacity={1} strokeWidth={3} />
                             </RadarChart>
                           </ResponsiveContainer>
                           
                           {/* 점수 요약 */}
-                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "1rem", marginTop: "1rem" }}>
-                            {Object.entries(evaluationScores).map(([metric, score]) => (
-                              <div key={metric} style={{ textAlign: "center", padding: "0.75rem", background: "#f9fafb", borderRadius: "8px" }}>
-                                <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: "4px" }}>{metric}</div>
-                                <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: score <= 3 ? "#ef4444" : score <= 4 ? "#f59e0b" : "#10b981" }}>
-                                  {score}/5
+                          <div style={{ marginTop: "1rem" }}>
+                            {/* 첫 번째 줄 - 3개 */}
+                            <div style={{ display: "flex", justifyContent: "center", gap: "1rem", marginBottom: "1rem" }}>
+                              {Object.entries(evaluationScores).slice(0, 3).map(([metric, score]) => (
+                                <div key={metric} style={{ textAlign: "center", padding: "1rem 1.25rem", background: "#f9fafb", borderRadius: "12px", minWidth: "140px", border: "1px solid #e5e7eb" }}>
+                                  <div style={{ fontSize: "0.875rem", color: "#6b7280", marginBottom: "8px", fontWeight: "500" }}>{metric}</div>
+                                  <div style={{ fontSize: "1.75rem", fontWeight: "bold", color: score <= 3 ? "#c084fc" : score <= 4 ? "#9370DB" : "#7c3aed" }}>
+                                    {score}/5
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
+                              ))}
+                            </div>
+                            {/* 두 번째 줄 - 2개 */}
+                            <div style={{ display: "flex", justifyContent: "center", gap: "1rem" }}>
+                              {Object.entries(evaluationScores).slice(3, 5).map(([metric, score]) => (
+                                <div key={metric} style={{ textAlign: "center", padding: "1rem 1.25rem", background: "#f9fafb", borderRadius: "12px", minWidth: "140px", border: "1px solid #e5e7eb" }}>
+                                  <div style={{ fontSize: "0.875rem", color: "#6b7280", marginBottom: "8px", fontWeight: "500" }}>{metric}</div>
+                                  <div style={{ fontSize: "1.75rem", fontWeight: "bold", color: score <= 3 ? "#c084fc" : score <= 4 ? "#9370DB" : "#7c3aed" }}>
+                                    {score}/5
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
                           </div>
                           
                           {/* 평균 점수 */}
-                          <div style={{ marginTop: "1rem", textAlign: "center", padding: "1rem", background: "linear-gradient(to right, #ecfdf5, #d1fae5)", borderRadius: "8px" }}>
-                            <span style={{ fontSize: "0.875rem", color: "#065f46", fontWeight: 600 }}>
+                          <div style={{ marginTop: "1.5rem", textAlign: "center", padding: "1.25rem", background: "linear-gradient(to right, #f3e8ff, #e9d5ff)", borderRadius: "12px", border: "2px solid #c084fc" }}>
+                            <div style={{ fontSize: "1.25rem", color: "#7c3aed", fontWeight: 600 }}>
                               평균 점수: {(Object.values(evaluationScores).reduce((a, b) => a + b, 0) / Object.values(evaluationScores).length).toFixed(1)}/5
-                            </span>
+                            </div>
                           </div>
                         </div>
                         
                         {/* 개선사항 제안 */}
                         {evaluationImprovements.length > 0 && (
                           <div style={{ background: "white", padding: "1.5rem", borderRadius: "12px", boxShadow: "0 2px 4px rgba(0,0,0,0.05)" }}>
-                            <h4 style={{ fontSize: "1rem", fontWeight: "bold", color: "#dc2626", marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                            <h4 style={{ fontSize: "1rem", fontWeight: "bold", color: "#92400e", marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
                               💡 개선 제안 ({evaluationImprovements.length}개)
                             </h4>
                             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
                               {evaluationImprovements.map((item, idx) => (
-                                <div key={idx} style={{ padding: "1rem", background: "#fef2f2", border: "2px solid #fecaca", borderRadius: "10px" }}>
+                                <div key={idx} style={{ padding: "1rem", background: "linear-gradient(135deg, #fef3c7, #fde68a)", border: "2px solid #f59e0b", borderRadius: "10px" }}>
                                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-                                    <span style={{ fontSize: "0.875rem", fontWeight: "600", color: "#991b1b" }}>
+                                    <span style={{ fontSize: "0.875rem", fontWeight: "600", color: "#92400e" }}>
                                       {item.metric}
                                     </span>
-                                    <span style={{ fontSize: "1rem", fontWeight: "bold", color: "#dc2626" }}>
+                                    <span style={{ fontSize: "1rem", fontWeight: "bold", color: "#b45309" }}>
                                       {item.score}/5
                                     </span>
                                   </div>
-                                  <div style={{ fontSize: "0.8rem", color: "#6b7280", marginBottom: "0.5rem" }}>
+                                  <div style={{ fontSize: "0.8rem", color: "#78350f", marginBottom: "0.5rem" }}>
                                     {item.reason}
                                   </div>
-                                  <div style={{ fontSize: "0.875rem", color: "#374151", padding: "0.75rem", background: "white", borderRadius: "6px", borderLeft: "3px solid #ef4444" }}>
+                                  <div style={{ fontSize: "0.875rem", color: "#78350f", padding: "0.75rem", background: "white", borderRadius: "6px", borderLeft: "3px solid #f59e0b" }}>
                                     {item.improvement}
                                   </div>
                                 </div>
                               ))}
                             </div>
-                            <div style={{ marginTop: "1rem", padding: "0.75rem", background: "#fff7ed", borderRadius: "8px", fontSize: "0.8rem", color: "#92400e" }}>
+                            <div style={{ marginTop: "1rem", padding: "0.75rem", background: "linear-gradient(135deg, #fef3c7, #fde68a)", borderRadius: "8px", fontSize: "0.8rem", color: "#92400e" }}>
                               💡 <strong>TIP:</strong> 위 제안 내용을 아래 AI 개선사항 입력란에 반영하여 추천서를 더욱 향상시킬 수 있습니다.
                             </div>
                           </div>
@@ -3407,7 +3944,7 @@ export default function App() {
                         {evaluationImprovements.length === 0 && (
                           <div style={{ background: "white", padding: "1.5rem", borderRadius: "12px", textAlign: "center", boxShadow: "0 2px 4px rgba(0,0,0,0.05)" }}>
                             <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>🎉</div>
-                            <div style={{ fontSize: "0.95rem", color: "#059669", fontWeight: 600 }}>
+                            <div style={{ fontSize: "1.25rem", color: "#7c3aed", fontWeight: 600 }}>
                               모든 지표가 우수합니다!
                             </div>
                             <div style={{ fontSize: "0.8rem", color: "#6b7280", marginTop: "0.5rem" }}>
@@ -3421,8 +3958,8 @@ export default function App() {
                 )}
                 
                 {/* AI 개선사항 입력란 */}
-                <div style={{ marginTop: "1.5rem", padding: "1rem", borderRadius: "12px", background: "linear-gradient(to right, #dbeafe, #bfdbfe)", border: "2px solid #60a5fa" }}>
-                  <label style={{ display: "block", fontSize: "0.95rem", fontWeight: "600", color: "#1e40af", marginBottom: "8px" }}>
+                <div style={{ marginTop: "1.5rem", padding: "1rem", borderRadius: "12px", background: "linear-gradient(to right, #e0e7ff, #c7d2fe)", border: "2px solid #a5b4fc" }}>
+                  <label style={{ display: "block", fontSize: "0.95rem", fontWeight: "600", color: "#6366f1", marginBottom: "8px" }}>
                     💡 {t.form.improvementNotes}
                   </label>
                   <textarea
@@ -3434,7 +3971,7 @@ export default function App() {
                       width: "100%",
                       padding: "12px",
                       borderRadius: "8px",
-                      border: "2px solid #93c5fd",
+                      border: "2px solid #a5b4fc",
                       fontSize: "14px",
                       resize: "vertical",
                       fontFamily: "inherit",
@@ -3453,7 +3990,7 @@ export default function App() {
                       fontSize: "16px",
                       border: "none",
                       cursor: refining ? "not-allowed" : "pointer",
-                      background: "linear-gradient(to right, #3b82f6, #2563eb)",
+                      background: "linear-gradient(to right, #6366f1, #818cf8)",
                       color: "white",
                       opacity: refining ? 0.5 : 1,
                       transition: "all 0.2s",
