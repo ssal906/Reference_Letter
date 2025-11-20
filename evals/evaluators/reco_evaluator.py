@@ -7,9 +7,9 @@ NLG 인간평가 논문 기준 (정확성, 전문성, 논리성/구조, 개인�
 import os
 from dotenv import load_dotenv
 
-# .env 파일 로드 (프로젝트 루트의 .env 파일)
-# Collyai 디렉토리의 .env 파일 경로 지정
-env_path = os.path.join(os.path.dirname(__file__), '..', '..', 'Collyai', '.env')
+# .env 파일 로드 (Collyai 디렉토리의 .env 파일)
+# evals가 Collyai 폴더 안에 있으므로 같은 레벨의 .env 파일 참조
+env_path = os.path.join(os.path.dirname(__file__), '..', '..', '.env')
 if os.path.exists(env_path):
     load_dotenv(env_path)
     print(f"✅ .env 파일 로드 완료: {env_path}")
@@ -21,7 +21,7 @@ else:
 # OPENAI_API_KEY 확인
 if not os.getenv("OPENAI_API_KEY"):
     print("⚠️  Warning: OPENAI_API_KEY가 설정되지 않았습니다.")
-    print("   Collyai/.env 파일에 OPENAI_API_KEY가 있는지 확인하세요.")
+    print("   .env 파일에 OPENAI_API_KEY가 있는지 확인하세요.")
 
 import re
 import csv
