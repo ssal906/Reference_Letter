@@ -19,6 +19,114 @@ const getApiBase = () => {
 };
 const API_BASE = getApiBase();
 
+// 다국어 지원
+const TRANSLATIONS = {
+  ko: {
+    title: "보관함",
+    home: "홈으로",
+    tabs: {
+      recommendations: "작성한 추천서",
+      reputations: "작성한 평판",
+    },
+    recommendations: {
+      title: "작성한 추천서",
+      searchPlaceholder: "요청자 이름으로 검색...",
+      description: "로그인한 계정으로 작성한 추천서 목록입니다. 각 항목을 클릭하면 내용이 펼쳐집니다.",
+      noResults: "검색 결과가 없습니다.",
+      empty: "작성한 추천서가 없습니다.",
+      requester: "요청자",
+      target: "대상자",
+      deleteConfirm: "정말 이 추천서를 삭제하시겠습니까?",
+      deleteFailed: "삭제에 실패했습니다.",
+      deleting: "삭제 중...",
+      delete: "삭제",
+      deleted: "추천서가 삭제되었습니다.",
+    },
+    reputations: {
+      title: "작성한 평판",
+      searchPlaceholder: "대상자 이름 또는 이메일로 검색...",
+      description: "로그인한 계정으로 작성한 평판 목록입니다. 각 항목을 클릭하면 내용이 펼쳐집니다.",
+      noResults: "검색 결과가 없습니다.",
+      empty: "작성한 평판이 없습니다.",
+      target: "대상자",
+      unknown: "알 수 없음",
+      category: "평판",
+      rating: "점",
+      created: "작성일",
+      deleteConfirm: "정말 이 평판을 삭제하시겠습니까?",
+      deleteFailed: "삭제에 실패했습니다.",
+      deleting: "삭제 중...",
+      delete: "삭제",
+      deleted: "평판이 삭제되었습니다.",
+      categories: {
+        collaboration: "협업능력",
+        expertise: "전문성",
+        responsibility: "책임감",
+        leadership: "리더십",
+        communication: "커뮤니케이션",
+        problemSolving: "문제해결",
+        creativity: "창의성",
+        timeManagement: "시간관리",
+        other: "기타",
+      },
+    },
+    loading: "불러오는 중...",
+    error: "보관함 데이터를 불러오지 못했습니다.",
+  },
+  en: {
+    title: "Archive",
+    home: "Home",
+    tabs: {
+      recommendations: "Recommendations",
+      reputations: "Reputations",
+    },
+    recommendations: {
+      title: "Recommendations",
+      searchPlaceholder: "Search by requester name...",
+      description: "List of recommendations written with your account. Click each item to expand the content.",
+      noResults: "No search results.",
+      empty: "No recommendations written.",
+      requester: "Requester",
+      target: "Target",
+      deleteConfirm: "Are you sure you want to delete this recommendation?",
+      deleteFailed: "Failed to delete.",
+      deleting: "Deleting...",
+      delete: "Delete",
+      deleted: "Recommendation deleted.",
+    },
+    reputations: {
+      title: "Reputations",
+      searchPlaceholder: "Search by target name or email...",
+      description: "List of reputations written with your account. Click each item to expand the content.",
+      noResults: "No search results.",
+      empty: "No reputations written.",
+      target: "Target",
+      unknown: "Unknown",
+      category: "Reputation",
+      rating: "points",
+      created: "Created",
+      deleteConfirm: "Are you sure you want to delete this reputation?",
+      deleteFailed: "Failed to delete.",
+      deleting: "Deleting...",
+      delete: "Delete",
+      deleted: "Reputation deleted.",
+      categories: {
+        collaboration: "Collaboration",
+        expertise: "Expertise",
+        responsibility: "Responsibility",
+        leadership: "Leadership",
+        communication: "Communication",
+        problemSolving: "Problem Solving",
+        creativity: "Creativity",
+        timeManagement: "Time Management",
+        other: "Other",
+      },
+    },
+    loading: "Loading...",
+    error: "Failed to load archive data.",
+  },
+};
+
 const styles = {
   page: { width: "100%" },
   card: {
@@ -32,7 +140,7 @@ const styles = {
     fontSize: "1.25rem",
     fontWeight: 800,
     marginBottom: "0.75rem",
-    background: "linear-gradient(to right, #ef4444, #dc2626)",
+    background: "linear-gradient(to right, #9370DB, #6A5ACD)",
     WebkitBackgroundClip: "text",
     WebkitTextFillColor: "transparent",
   },
@@ -45,7 +153,7 @@ const styles = {
     fontWeight: 700,
   },
   primaryBtn: {
-    background: "linear-gradient(to right, #ef4444, #dc2626)",
+    background: "linear-gradient(to right, #9370DB, #6A5ACD)",
     color: "white",
   },
   accordionHeader: {
@@ -75,8 +183,8 @@ const styles = {
   tag: {
     padding: "4px 10px",
     borderRadius: "999px",
-    background: "#fee2e2",
-    color: "#991b1b",
+    background: "#e6d9f7",
+    color: "#9370DB",
     fontSize: "12px",
     fontWeight: 700,
   },
@@ -93,8 +201,8 @@ const styles = {
     borderRadius: "8px",
     border: "none",
     cursor: "pointer",
-    background: "#fee2e2",
-    color: "#991b1b",
+    background: "#e6d9f7",
+    color: "#6A5ACD",
     fontSize: "12px",
     fontWeight: 600,
     marginLeft: "8px",
@@ -117,8 +225,8 @@ const styles = {
     transition: "all 0.2s",
   },
   tabButtonActive: {
-    color: "#ef4444",
-    borderBottomColor: "#ef4444",
+    color: "#9370DB",
+    borderBottomColor: "#9370DB",
   },
 };
 
@@ -139,18 +247,18 @@ function Accordion({ title, defaultOpen = true, children }) {
   );
 }
 
-function RecommendationItem({ compactTitle, meta, content, onDelete, itemId }) {
+function RecommendationItem({ compactTitle, meta, content, onDelete, itemId, t }) {
   const [open, setOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const handleDelete = async (e) => {
     e.stopPropagation();
-    if (!window.confirm("정말 이 추천서를 삭제하시겠습니까?")) return;
+    if (!window.confirm(t.deleteConfirm)) return;
     setDeleting(true);
     try {
       await onDelete(itemId);
     } catch {
-      alert("삭제에 실패했습니다.");
+      alert(t.deleteFailed);
     } finally {
       setDeleting(false);
     }
@@ -173,7 +281,7 @@ function RecommendationItem({ compactTitle, meta, content, onDelete, itemId }) {
               cursor: deleting ? "not-allowed" : "pointer",
             }}
           >
-            {deleting ? "삭제 중..." : "삭제"}
+            {deleting ? t.deleting : t.delete}
           </button>
           <span style={{ color: "#9ca3af", fontWeight: 700 }}>{open ? "▲" : "▼"}</span>
         </div>
@@ -187,18 +295,47 @@ function RecommendationItem({ compactTitle, meta, content, onDelete, itemId }) {
   );
 }
 
-function ReputationItem({ item, onDelete }) {
+// 한국어 카테고리 문자열을 키로 변환하는 역방향 매핑
+const CATEGORY_REVERSE_MAP = {
+  "협업능력": "collaboration",
+  "전문성": "expertise",
+  "책임감": "responsibility",
+  "리더십": "leadership",
+  "커뮤니케이션": "communication",
+  "문제해결": "problemSolving",
+  "창의성": "creativity",
+  "시간관리": "timeManagement",
+  "기타": "other",
+};
+
+// 카테고리를 번역된 텍스트로 변환하는 헬퍼 함수
+const getCategoryLabel = (category, t) => {
+  if (!category) return t.category;
+  // 먼저 키인지 확인
+  if (t.categories[category]) {
+    return t.categories[category];
+  }
+  // 한국어 문자열인 경우 키로 변환 후 번역
+  const key = CATEGORY_REVERSE_MAP[category];
+  if (key && t.categories[key]) {
+    return t.categories[key];
+  }
+  // 둘 다 아닌 경우 원본 반환
+  return category;
+};
+
+function ReputationItem({ item, onDelete, t }) {
   const [open, setOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const handleDelete = async (e) => {
     e.stopPropagation();
-    if (!window.confirm("정말 이 평판을 삭제하시겠습니까?")) return;
+    if (!window.confirm(t.deleteConfirm)) return;
     setDeleting(true);
     try {
       await onDelete(item.id);
     } catch {
-      alert("삭제에 실패했습니다.");
+      alert(t.deleteFailed);
     } finally {
       setDeleting(false);
     }
@@ -208,17 +345,17 @@ function ReputationItem({ item, onDelete }) {
     <div style={styles.listItem}>
       <div style={styles.listHeader} onClick={() => setOpen(!open)}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, flexWrap: "wrap" }}>
-          <span style={styles.tag}>{item.category || "평판"}</span>
+          <span style={styles.tag}>{getCategoryLabel(item.category, t)}</span>
           <strong style={{ fontSize: 14 }}>
-            대상자: {item.target_name || item.target_email || "알 수 없음"}
+            {t.target}: {item.target_name || item.target_email || t.unknown}
           </strong>
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
             {[...Array(item.rating || 0)].map((_, idx) => (
-              <span key={idx} style={{ color: "#ef4444", fontSize: 14 }}>★</span>
+              <span key={idx} style={{ color: "#9370DB", fontSize: 14 }}>★</span>
             ))}
             {item.rating && (
               <span style={{ fontSize: "0.875rem", color: "#6b7280", marginLeft: 4 }}>
-                {item.rating}점
+                {item.rating}{t.rating}
               </span>
             )}
           </div>
@@ -233,7 +370,7 @@ function ReputationItem({ item, onDelete }) {
               cursor: deleting ? "not-allowed" : "pointer",
             }}
           >
-            {deleting ? "삭제 중..." : "삭제"}
+            {deleting ? t.deleting : t.delete}
           </button>
           <span style={{ color: "#9ca3af", fontWeight: 700 }}>{open ? "▲" : "▼"}</span>
         </div>
@@ -246,8 +383,8 @@ function ReputationItem({ item, onDelete }) {
             </div>
           )}
           {item.created_at && (
-            <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginTop: 8 }}>
-              작성일: {new Date(item.created_at).toLocaleString()}
+            <div style={{ fontSize: "0.75rem", color: "#6A5ACD", marginTop: 8 }}>
+              {t.created}: {new Date(item.created_at).toLocaleString()}
             </div>
           )}
         </div>
@@ -256,13 +393,15 @@ function ReputationItem({ item, onDelete }) {
   );
 }
 
-export default function Box({ user, token, onBackHome, initialTab = "recommendations", onTabChange }) {
+export default function Box({ user, token, onBackHome, initialTab = "recommendations", onTabChange, language = 'ko' }) {
   const [activeTab, setActiveTab] = useState(initialTab); // "recommendations" or "reputations"
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState([]);
   const [reputations, setReputations] = useState([]);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+
+  const t = TRANSLATIONS[language];
 
   // 추천서 데이터 로드
   useEffect(() => {
@@ -277,13 +416,13 @@ export default function Box({ user, token, onBackHome, initialTab = "recommendat
         const json = await res.json();
         setSent(json?.items || []);
       } catch {
-        setError("보관함 데이터를 불러오지 못했습니다.");
+        setError(t.error);
       } finally {
         setLoading(false);
       }
     };
     fetchSent();
-  }, [token, user?.email]);
+  }, [token, user?.email, t.error]);
 
   // 평판 데이터 로드
   useEffect(() => {
@@ -298,13 +437,13 @@ export default function Box({ user, token, onBackHome, initialTab = "recommendat
         const json = await res.json();
         setReputations(json?.items || []);
       } catch {
-        setError("보관함 데이터를 불러오지 못했습니다.");
+        setError(t.error);
       } finally {
         setLoading(false);
       }
     };
     fetchReputations();
-  }, [token, user?.email]);
+  }, [token, user?.email, t.error]);
 
   // 추천서 삭제 핸들러
   const handleDeleteRecommendation = async (itemId) => {
@@ -314,11 +453,11 @@ export default function Box({ user, token, onBackHome, initialTab = "recommendat
     });
     if (!res.ok) {
       const data = await res.json();
-      throw new Error(data.detail || "삭제 실패");
+      throw new Error(data.detail || t.recommendations.deleteFailed);
     }
     // 삭제 후 목록에서 제거
     setSent((prev) => prev.filter((item) => item.id !== itemId));
-    alert("추천서가 삭제되었습니다.");
+    alert(t.recommendations.deleted);
   };
 
   // 평판 삭제 핸들러
@@ -329,11 +468,11 @@ export default function Box({ user, token, onBackHome, initialTab = "recommendat
     });
     if (!res.ok) {
       const data = await res.json();
-      throw new Error(data.detail || "삭제 실패");
+      throw new Error(data.detail || t.reputations.deleteFailed);
     }
     // 삭제 후 목록에서 제거
     setReputations((prev) => prev.filter((item) => item.id !== repId));
-    alert("평판이 삭제되었습니다.");
+    alert(t.reputations.deleted);
   };
 
   // 추천서 검색 필터링
@@ -375,17 +514,15 @@ export default function Box({ user, token, onBackHome, initialTab = "recommendat
   return (
     <div style={{ maxWidth: 980, margin: "0 auto", width: "100%" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
-        <h1 style={{ fontSize: 24, fontWeight: 800, background: "linear-gradient(to right,#ef4444,#dc2626)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-          보관함
+        <h1 style={{ fontSize: 24, fontWeight: 800, background: "linear-gradient(to right,#9370DB,#6A5ACD)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+          {t.title}
         </h1>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button
-            onClick={() => onBackHome && onBackHome()}
-            style={{ ...styles.button, background: "white", border: "2px solid #e5e7eb", borderRadius: 10 }}
-          >
-            홈으로
-          </button>
-        </div>
+        <button
+          onClick={() => onBackHome && onBackHome()}
+          style={{ ...styles.button, background: "white", border: "2px solid #e5e7eb", borderRadius: 10 }}
+        >
+          {t.home}
+        </button>
       </div>
 
       {/* 탭 버튼 */}
@@ -397,7 +534,7 @@ export default function Box({ user, token, onBackHome, initialTab = "recommendat
             ...(activeTab === "recommendations" ? styles.tabButtonActive : { borderBottom: "none" }),
           }}
         >
-          작성한 추천서
+          {t.tabs.recommendations}
         </button>
         <button
           onClick={() => handleTabChange("reputations")}
@@ -406,32 +543,32 @@ export default function Box({ user, token, onBackHome, initialTab = "recommendat
             ...(activeTab === "reputations" ? styles.tabButtonActive : { borderBottom: "none" }),
           }}
         >
-          작성한 평판
+          {t.tabs.reputations}
         </button>
       </div>
 
-      {loading && <div style={{ ...styles.card }}>불러오는 중...</div>}
-      {error && <div style={{ ...styles.card, color: "#b91c1c" }}>{error}</div>}
+      {loading && <div style={{ ...styles.card }}>{t.loading}</div>}
+      {error && <div style={{ ...styles.card, color: "#9370DB" }}>{error}</div>}
 
       {/* 작성한 추천서 탭 */}
       {activeTab === "recommendations" && (
         <div id="archive-sent">
-          <Accordion title="작성한 추천서" defaultOpen={true}>
+          <Accordion title={t.recommendations.title} defaultOpen={true}>
             {/* 검색 입력 */}
             <input
               type="text"
-              placeholder="요청자 이름으로 검색..."
+              placeholder={t.recommendations.searchPlaceholder}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={styles.searchInput}
             />
 
             <div style={{ marginBottom: 8, color: "#6b7280" }}>
-              로그인한 계정으로 작성한 추천서 목록입니다. 각 항목을 클릭하면 내용이 펼쳐집니다.
+              {t.recommendations.description}
             </div>
             {filteredSent.length === 0 && (
               <div style={{ ...styles.card }}>
-                {searchQuery ? "검색 결과가 없습니다." : "작성한 추천서가 없습니다."}
+                {searchQuery ? t.recommendations.noResults : t.recommendations.empty}
               </div>
             )}
             {filteredSent.map((it) => (
@@ -439,9 +576,10 @@ export default function Box({ user, token, onBackHome, initialTab = "recommendat
                 key={it.id}
                 itemId={it.id}
                 meta={new Date(it.created_at).toLocaleString()}
-                compactTitle={`요청자: ${it.requester_name || it.to || "대상자"}`}
+                compactTitle={`${t.recommendations.requester}: ${it.requester_name || it.to || t.recommendations.target}`}
                 content={it.content || it.recommendation || ""}
                 onDelete={handleDeleteRecommendation}
+                t={t.recommendations}
               />
             ))}
           </Accordion>
@@ -451,22 +589,22 @@ export default function Box({ user, token, onBackHome, initialTab = "recommendat
       {/* 작성한 평판 탭 */}
       {activeTab === "reputations" && (
         <div id="archive-reputations">
-          <Accordion title="작성한 평판" defaultOpen={true}>
+          <Accordion title={t.reputations.title} defaultOpen={true}>
             {/* 검색 입력 */}
             <input
               type="text"
-              placeholder="대상자 이름 또는 이메일로 검색..."
+              placeholder={t.reputations.searchPlaceholder}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={styles.searchInput}
             />
 
             <div style={{ marginBottom: 8, color: "#6b7280" }}>
-              로그인한 계정으로 작성한 평판 목록입니다. 각 항목을 클릭하면 내용이 펼쳐집니다.
+              {t.reputations.description}
             </div>
             {filteredReputations.length === 0 && (
               <div style={{ ...styles.card }}>
-                {searchQuery ? "검색 결과가 없습니다." : "작성한 평판이 없습니다."}
+                {searchQuery ? t.reputations.noResults : t.reputations.empty}
               </div>
             )}
             {filteredReputations.map((item) => (
@@ -474,6 +612,7 @@ export default function Box({ user, token, onBackHome, initialTab = "recommendat
                 key={item.id}
                 item={item}
                 onDelete={handleDeleteReputation}
+                t={t.reputations}
               />
             ))}
           </Accordion>
