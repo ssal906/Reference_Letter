@@ -1,24 +1,34 @@
 import React, { useState, useRef } from 'react';
 
+const TRANSLATIONS = {
+  ko: {
+    voiceInput: '🎤 음성 입력',
+    processing: '처리 중...',
+    recording: '⏹️ 녹음 중지',
+    micError: '마이크 접근 권한이 필요합니다.\n브라우저 설정에서 마이크 권한을 허용해주세요.',
+    errorProcess: '음성 처리 실패',
+    success: '✅ 음성 입력이 완료되었습니다!\n\n각 항목을 확인하고 필요시 수정해주세요.',
+    errorUpload: '음성 처리 중 오류가 발생했습니다.\n\n',
+    errorServer: '\n\n서버 상태를 확인해주세요.',
+  },
+  en: {
+    voiceInput: '🎤 Voice Input',
+    processing: 'Processing...',
+    recording: '⏹️ Stop Recording',
+    micError: 'Microphone access is required.\nPlease allow microphone permission in your browser settings.',
+    errorProcess: 'Voice processing failed',
+    success: '✅ Voice input complete!\n\nPlease review and modify each field if necessary.',
+    errorUpload: 'An error occurred during voice processing.\n\n',
+    errorServer: '\n\nPlease check the server status.',
+  },
+};
+
 /**
  * 음성 입력 버튼 컴포넌트
  * 사용자의 음성을 녹음하고, 서버에서 텍스트로 변환 후 필드별로 분류
  */
-
-// API Base URL (환경 변수 지원)
-const getApiBase = () => {
-  const envApiBase = import.meta?.env?.VITE_API_BASE;
-  if (envApiBase) return envApiBase.replace(/\/+$/, "");
-  const isProduction = typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1";
-  if (isProduction) {
-    console.error("⚠️ VITE_API_BASE 환경 변수가 설정되지 않았습니다!");
-    return "";
-  }
-  return "http://localhost:8000";
-};
-const API_BASE = getApiBase();
-
-function VoiceInputButton({ onFieldsReceived }) {
+function VoiceInputButton({ onFieldsReceived, language = 'ko' }) {
+  const t = TRANSLATIONS[language] || TRANSLATIONS.ko;
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const mediaRecorderRef = useRef(null);
@@ -56,7 +66,7 @@ function VoiceInputButton({ onFieldsReceived }) {
       console.log('녹음 시작');
     } catch (error) {
       console.error('마이크 접근 오류:', error);
-      alert('마이크 접근 권한이 필요합니다.\n브라우저 설정에서 마이크 권한을 허용해주세요.');
+      alert(t.micError);
     }
   };
 
@@ -81,6 +91,8 @@ function VoiceInputButton({ onFieldsReceived }) {
       formData.append('audio_file', audioBlob, 'recording.webm');
 
       console.log('음성 파일 전송 중...');
+      // FormData는 직접 fetch 사용
+      const API_BASE = import.meta?.env?.VITE_API_BASE || (window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1" ? "" : "http://localhost:8000");
       const response = await fetch(`${API_BASE}/parse-voice-input`, {
         method: 'POST',
         body: formData,
@@ -88,7 +100,7 @@ function VoiceInputButton({ onFieldsReceived }) {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || '음성 처리 실패');
+        throw new Error(errorData.detail || t.errorProcess);
       }
 
       const data = await response.json();
@@ -100,10 +112,10 @@ function VoiceInputButton({ onFieldsReceived }) {
         onFieldsReceived(data.fields, data.transcribed_text);
       }
 
-      alert('✅ 음성 입력이 완료되었습니다!\n\n각 항목을 확인하고 필요시 수정해주세요.');
+      alert(t.success);
     } catch (error) {
       console.error('❌ 음성 업로드 오류:', error);
-      alert(`음성 처리 중 오류가 발생했습니다.\n\n${error.message}\n\n서버 상태를 확인해주세요.`);
+      alert(`${t.errorUpload}${error.message}${t.errorServer}`);
     } finally {
       setIsProcessing(false);
     }
@@ -117,44 +129,54 @@ function VoiceInputButton({ onFieldsReceived }) {
           disabled={isProcessing}
           style={{
             padding: '10px 20px',
-            backgroundColor: isProcessing ? '#ccc' : '#4CAF50',
+            background: isProcessing 
+              ? '#ccc' 
+              : 'linear-gradient(135deg, #9370DB 0%, #6A5ACD 50%, #FFD700 100%)',
             color: 'white',
-            border: 'none',
-            borderRadius: '8px',
+            border: isProcessing ? 'none' : '1px solid #9370DB',
+            borderRadius: '10px',
             cursor: isProcessing ? 'not-allowed' : 'pointer',
             fontSize: '15px',
             fontWeight: 'bold',
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            boxShadow: isProcessing ? 'none' : '0 2px 5px rgba(0,0,0,0.2)',
+            boxShadow: isProcessing ? 'none' : '0 4px 12px rgba(147, 112, 219, 0.4)',
             transition: 'all 0.3s ease'
           }}
-          onMouseOver={(e) => {
-            if (!isProcessing) e.target.style.backgroundColor = '#45a049';
+          onMouseEnter={(e) => {
+            if (!isProcessing) {
+              e.currentTarget.style.background = 'linear-gradient(135deg, #FFD700 0%, #9370DB 100%)';
+              e.currentTarget.style.transform = 'translateY(-2px)';
+              e.currentTarget.style.boxShadow = '0 6px 16px rgba(147, 112, 219, 0.5)';
+            }
           }}
-          onMouseOut={(e) => {
-            if (!isProcessing) e.target.style.backgroundColor = '#4CAF50';
+          onMouseLeave={(e) => {
+            if (!isProcessing) {
+              e.currentTarget.style.background = 'linear-gradient(135deg, #9370DB 0%, #6A5ACD 50%, #FFD700 100%)';
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(147, 112, 219, 0.4)';
+            }
           }}
         >
-          <span>{isProcessing ? '처리 중...' : '음성 입력'}</span>
+          <span>{isProcessing ? t.processing : t.voiceInput}</span>
         </button>
       ) : (
         <button
           onClick={stopRecording}
           style={{
             padding: '10px 20px',
-            backgroundColor: '#f44336',
+            background: 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)',
             color: 'white',
-            border: 'none',
-            borderRadius: '8px',
+            border: '1px solid #dc2626',
+            borderRadius: '10px',
             cursor: 'pointer',
             fontSize: '15px',
             fontWeight: 'bold',
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
+            boxShadow: '0 4px 12px rgba(220, 38, 38, 0.4)',
             animation: 'pulse 1.5s infinite'
           }}
         >
@@ -165,7 +187,7 @@ function VoiceInputButton({ onFieldsReceived }) {
             borderRadius: '50%',
             animation: 'blink 1s infinite'
           }}></span>
-          <span>녹음 중지</span>
+          <span>{t.recording}</span>
         </button>
       )}
 
