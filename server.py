@@ -12,6 +12,7 @@ import jwt
 import re
 import io
 import base64
+import time
 from passlib.context import CryptContext
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,6 +33,9 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from urllib.parse import quote
 from openai import OpenAI
+import docx
+import PyPDF2
+import chardet
 
 # ▼ DB 연결
 from sqlalchemy import create_engine, text
@@ -54,15 +58,13 @@ try:
         reco_evaluator_module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(reco_evaluator_module)
         RecoEvaluator = reco_evaluator_module.RecoEvaluator
+        print("✅ RecoEvaluator 로드 완료")
     else:
-        # 대체 방법: 일반 import 시도
-        from evals.evaluators.reco_evaluator import RecoEvaluator  # type: ignore
-except (ImportError, Exception) as e:
-    print(f"⚠️  Warning: evals 모듈을 불러올 수 없습니다: {e}")
-    print(f"   경로 확인: {evals_path}")
-    print(f"   evals 디렉토리 위치: {Path(evals_path) / 'evals'}")
-    # 런타임에서는 동작하지만 IDE가 인식하지 못할 수 있음
-    RecoEvaluator = None
+        raise ImportError("reco_evaluator 모듈을 찾을 수 없습니다.")
+except Exception as e:
+    print(f"⚠️  RecoEvaluator 로드 실패: {e}")
+    print("   evals/evaluators/reco_evaluator.py 파일을 확인하세요.")
+    raise
 
 api_key = os.getenv("ANTHROPIC_API_KEY")
 if not api_key:
@@ -126,49 +128,6 @@ engine = create_engine(
 
 app = FastAPI()
 
-# 요청/응답 로깅 미들웨어
-@app.middleware("http")
-async def log_requests(request, call_next):
-    import time
-    from starlette.requests import Request
-    from starlette.responses import StreamingResponse
-    
-    start_time = time.time()
-    
-    # 요청 정보 로깅
-    print(f"\n{'='*50}")
-    print(f"📥 Request: {request.method} {request.url.path}")
-    print(f"   Query params: {dict(request.query_params)}")
-    
-    # POST/PUT/PATCH 요청의 body 로깅 (스트림 복원)
-    if request.method in ["POST", "PUT", "PATCH"]:
-        try:
-            body = await request.body()
-            if body:
-                body_str = body.decode()[:500]  # 처음 500자만
-                print(f"   Body: {body_str}")
-                # body를 다시 스트림으로 복원
-                async def receive():
-                    return {"type": "http.request", "body": body}
-                request._receive = receive
-        except Exception as e:
-            print(f"   Body read error: {e}")
-    
-    # 응답 처리
-    try:
-        response = await call_next(request)
-        process_time = time.time() - start_time
-        print(f"📤 Response: {response.status_code} ({process_time:.3f}s)")
-        print(f"{'='*50}\n")
-        return response
-    except Exception as e:
-        process_time = time.time() - start_time
-        print(f"❌ Error: {str(e)} ({process_time:.3f}s)")
-        import traceback
-        traceback.print_exc()
-        print(f"{'='*50}\n")
-        raise
-
 # 정적 파일 제공 (HTML, CSS, JS)
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 if not os.path.exists(STATIC_DIR):
@@ -221,7 +180,7 @@ class RecommendationRequest(BaseModel):
     signature_data: Optional[str] = None  # 서명 데이터 (base64 또는 텍스트)
     signature_type: Optional[str] = None  # 서명 타입 ("draw" | "text" | "upload")
 
-def build_recommendation_prompt(inputs: RecommendationRequest, score: int, recommender_email: str = "", user_details: dict = None, template_content: str = None) -> str:
+def build_recommendation_prompt(inputs: RecommendationRequest, score: int, recommender_email: str = "", user_details: dict = None, template_content: str = None, writing_style: dict = None) -> str:
     major_line = f"\n전공 분야: {inputs.major_field}" if inputs.major_field else ""
     
     # 사용자 상세정보가 있으면 추가
@@ -297,37 +256,80 @@ def build_recommendation_prompt(inputs: RecommendationRequest, score: int, recom
     # 글자수 관련 지시문 생성 - 동적 계산
     purpose_word_count = ""
     length_instructions = ""
-    num_paragraphs = 8  # 기본값
-    chars_per_paragraph = 400  # 기본값
-    paragraph_description = "8-10개 정도의 문단, 각 문단 300-500자"
     
-    if inputs.word_count:
+    # 기본값을 1000자로 설정
+    target_word_count = inputs.word_count if inputs.word_count else 1000
+    
+    if target_word_count:
         # 문단 수와 문단당 길이를 글자수에 따라 동적으로 계산
         # 기본적으로 문단당 300-500자를 목표로 함
         avg_chars_per_paragraph = 400
-        num_paragraphs = max(3, int(inputs.word_count / avg_chars_per_paragraph))
-        chars_per_paragraph = int(inputs.word_count / num_paragraphs)
+        num_paragraphs = max(3, int(target_word_count / avg_chars_per_paragraph))
+        chars_per_paragraph = int(target_word_count / num_paragraphs)
         paragraph_description = f"약 {num_paragraphs}개 문단, 각 문단 평균 {chars_per_paragraph}자"
         
         # 단순하고 직접적인 지시
-        purpose_word_count = f"\n\n━━━━━━━━━━━━━━━━━━━━━━\n최우선 목표: 본문 정확히 {inputs.word_count}자\n━━━━━━━━━━━━━━━━━━━━━━"
+        purpose_word_count = f"\n\n━━━━━━━━━━━━━━━━━━━━━━\n최우선 목표: 본문 정확히 {target_word_count}자\n━━━━━━━━━━━━━━━━━━━━━━"
         
         length_instructions = f"""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 [본문 길이 규칙 - 반드시 준수]
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. 본문 전체: 정확히 {inputs.word_count}자 (공백 포함)
+1. 본문 전체: 정확히 {target_word_count}자 (공백 포함)
 2. 문단 수: 약 {num_paragraphs}개 문단 작성
 3. 각 문단 길이: 평균 {chars_per_paragraph}자 정도
-4. 요청된 {inputs.word_count}자를 정확히 맞추는 것이 최우선입니다.
+4. 요청된 {target_word_count}자를 정확히 맞추는 것이 최우선입니다.
 5. 모든 내용을 요청된 길이에 맞게 작성하세요.
 6. 예시, 수치, 구체적 상황을 포함하되 전체 길이를 준수하세요.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━"""
     
+    # 문체 반영이 있으면 프롬프트 시작 부분에 강력하게 추가
+    style_prefix = ""
+    if writing_style:
+        common_phrases = writing_style.get('common_phrases', [])
+        if common_phrases:
+            # 물결표(~) 제거 - "~거든요" → "거든요"
+            phrase1 = common_phrases[0].replace('~', '') if len(common_phrases) > 0 else "해요"
+            phrase2 = common_phrases[1].replace('~', '') if len(common_phrases) > 1 else phrase1
+            phrase3 = common_phrases[2].replace('~', '') if len(common_phrases) > 2 else phrase2
+            
+            style_prefix = f"""
+🚨🚨🚨 최우선 규칙 - 반드시 준수 🚨🚨🚨
+
+이 추천서는 {inputs.recommender_name}님의 고유한 말투로 작성됩니다.
+일반적인 "~합니다", "~입니다" 표현은 절대 사용하지 마세요!
+
+【반드시 사용해야 할 끝맺음 표현】
+• {phrase1}
+• {phrase2}
+• {phrase3}
+
+【예시 - 이렇게 작성하세요】
+❌ 틀림: "김나비님은 뛰어난 인재입니다"
+✅ 정답: "김나비님은 뛰어난 인재{phrase1}"
+
+❌ 틀림: "프로젝트를 성공적으로 완수했습니다"
+✅ 정답: "프로젝트를 성공적으로 완수했{phrase2}"
+
+❌ 틀림: "탁월한 성과를 보여주었습니다"
+✅ 정답: "탁월한 성과를 보여주었{phrase3}"
+
+⚠️ 중요: 본문의 모든 문장 끝은 위의 3가지 표현 중 하나로만 끝나야 합니다!
+⚠️ "~합니다", "~입니다", "~했습니다" 같은 일반 격식체는 절대 사용 금지!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+"""
+    
+    # 문체가 없을 때만 기본 격식체 지시 추가
+    tone_instruction = ""
+    if not writing_style:
+        tone_instruction = "- 높임 표현(~하셨습니다, ~하십니다 등) 사용을 지양하고, 평서문 형태(~했습니다, ~합니다 등)로 작성합니다."
+    
     prompt = f"""
-당신은 전문 추천서 작성자입니다. 아래 입력값을 바탕으로 "공식 추천서"를 작성합니다.
+{style_prefix}당신은 전문 추천서 작성자입니다. 아래 입력값을 바탕으로 "공식 추천서"를 작성합니다.
 출력은 한국어만 사용합니다. 고유명사 외 영문 표현 금지.
-- 높임 표현(~하셨습니다, ~하십니다 등) 사용을 지양하고, 평서문 형태(~했습니다, ~합니다 등)로 작성합니다.
+{tone_instruction}
 
 [작성 목적]
 - 요청자의 역량·성과·적합성을 명확히 전달하는 추천서를 생성합니다.
@@ -336,7 +338,7 @@ def build_recommendation_prompt(inputs: RecommendationRequest, score: int, recom
 [형식]
 1) 제목: 추천서
 2) 빈 줄
-3) 본문 ({paragraph_description})
+3) 본문 ({paragraph_description}){' - 🔴 모든 문장 끝은 위에서 지정한 끝맺음 표현만 사용!' if writing_style else ''}
    - 작성자 소개와 관계
    - 첫 인상과 전반적 역량 평가
    - 구체적 성과 사례 (상세히)
@@ -356,6 +358,7 @@ def build_recommendation_prompt(inputs: RecommendationRequest, score: int, recom
    - 서명:
 
 [형식 규칙]
+- 해당 형식을 참고하되, 작성할 정보가 부족한 경우 변형 가능합니다.
 - 대괄호(예: [도입], [마무리])나 섹션 번호를 사용하지 않습니다.
 - 'To whom it may concern', 'Sincerely' 같은 영문 인사말 금지.
 - 이름/이메일은 그대로 유지합니다(변형 금지).
@@ -377,7 +380,7 @@ def build_recommendation_prompt(inputs: RecommendationRequest, score: int, recom
   * 2점(약하게 추천): 사실 중심이나 일부 평가 포함. 마지막 문단은 "추천합니다" 정도로 마무리.
   * 3점(추천함): 사실과 평가를 균형있게 포함. 마지막 문단은 "추천합니다" 정도로 표현.
   * 4점(강력히 추천): 평가와 주관적 의견을 적극 포함. 마지막 문단은 "강력히 추천" 또는 "적극 추천"으로 표현.
-  * 5점(최우선 추천): 주관적 평가와 의견을 충분히 포함. 마지막 문단은 "강력히 추천", "이러한 능력을 갖췄으므로 인재로 적합하다", "최우선으로 추천" 등 강한 표현 사용.
+  * 5점(최우선 추천): 주관적 평가와 의견을 충분히 포함. 마지막 문단은 "강력히 추천", "이러한 능력을 갖췄으므로 인재로 적합하다" 등 강한 표현 사용.
 - 점수가 높을수록 주관적 평가와 의견을 더 많이 포함하고, 점수가 낮을수록 사실 나열에 집중합니다.
 
 [전공/도메인]
@@ -387,13 +390,52 @@ def build_recommendation_prompt(inputs: RecommendationRequest, score: int, recom
 [입력]
 - 점수: {score}점
 - 추천서 톤: {inputs.tone}
-  * 톤 종류 및 특징:
-    - 공식적: 격식 있고 정중한 문체, 전문적 어휘 사용, 객관적 서술
-    - 친근한: 편안하고 따뜻한 분위기, 일상적 어휘 사용, 주관적 경험 강조
-    - 간결한: 핵심만 간단명료하게, 불필요한 수식어 최소화, 직설적 표현
-    - 설득형: 논리적 근거와 구체적 사례 강조, 설득력 있는 어휘 사용, 적극적 추천 어조
-    - 중립적: 객관적 사실 중심, 감정 표현 최소화, 균형잡힌 서술
-  * 선택된 톤({inputs.tone})에 맞는 분위기와 문체(어휘)를 일관되게 사용하세요.
+  * 톤 종류 및 상세 특징:
+    
+    [공식적 톤]
+    - 문체: 격식 있고 정중하며, 공식 문서에 적합한 문체
+    - 어휘 특징:
+      * 사용 권장: "임무를 수행했습니다", "역량을 발휘했습니다", "성과를 달성했습니다", "기여했습니다", "보여주었습니다", "입증했습니다", "검증되었습니다", "입지했습니다", "기대됩니다", "권장합니다"
+      * 평가 표현: "탁월한", "뛰어난", "우수한", "능력 있는", "적합한", "기대되는"
+      * 금지 어휘: "좋아요", "괜찮아요", "멋져요", "대단해요" 등 구어체, "~했어요", "~했음" 등 비격식 표현
+    - 문장 구조: 주어-서술어 구조가 명확하고, 수동태 사용 가능, 복문 활용
+    - 표현 방식: 객관적 사실 서술, 수치와 데이터 강조, 공식적 평가 표현
+    - 예시: "저는 {inputs.requester_name}이 업무 수행 과정에서 탁월한 역량을 발휘했음을 확인했습니다."
+    
+    [친근한 톤]
+    - 문체: 편안하고 따뜻하며, 개인적 경험을 바탕으로 한 친밀한 문체
+    - 어휘 특징:
+      * 사용 권장: "함께 일했습니다", "지켜봤습니다", "느꼈습니다", "경험했습니다", "인상 깊었습니다", "기억에 남습니다", "특히 좋았던 점은", "인상적이었습니다", "감동받았습니다", "자랑스럽습니다"
+      * 평가 표현: "훌륭한", "멋진", "뛰어난", "좋은", "특별한", "인상적인"
+      * 허용 어휘: "정말", "매우", "너무나도" 등 감정 표현 수식어 사용 가능
+    - 문장 구조: 주관적 경험 서술, 감정 표현 포함, 구체적 일화 활용
+    - 표현 방식: 개인적 관찰과 경험 강조, 따뜻한 어조, 구체적 상황 묘사
+    - 예시: "저는 {inputs.requester_name}과 함께 일하면서 정말 인상 깊었던 점이 많았습니다."
+    
+    [간결한 톤]
+    - 문체: 핵심만 간단명료하게, 불필요한 수식어 없이 직설적
+    - 어휘 특징:
+      * 사용 권장: "했습니다", "완료했습니다", "달성했습니다", "보유하고 있습니다", "능력이 있습니다", "적합합니다", "추천합니다"
+      * 평가 표현: "우수", "능력", "적합", "기대" (수식어 최소화)
+      * 금지 어휘: "매우", "정말", "너무나도", "특히", "무엇보다" 등 과도한 수식어, 장황한 설명
+    - 문장 구조: 단문 위주, 주어-서술어-목적어 구조 명확, 불필요한 부사/형용사 제거
+    - 표현 방식: 사실 중심, 핵심만 간결히, 직설적 표현, 나열식 구조 활용
+    - 예시: "저는 {inputs.requester_name}을 추천합니다. 업무 능력이 우수하고 적합한 인재입니다."
+    
+    [설득형 톤]
+    - 문체: 논리적 근거와 구체적 사례를 바탕으로 한 적극적 추천 문체
+    - 어휘 특징:
+      * 사용 권장: "입증했습니다", "보여주었습니다", "증명했습니다", "강력히 추천합니다", "적극 추천합니다", "확신합니다", "자신합니다", "권장합니다", "기대합니다", "기대됩니다"
+      * 평가 표현: "탁월한", "뛰어난", "우수한", "최고의", "이상적인", "완벽한"
+      * 강조 표현: "특히", "무엇보다", "더욱이", "또한", "따라서", "그 결과"
+    - 문장 구조: 논리적 연결 구조, 인과관계 명시, 대조/비교 활용
+    - 표현 방식: 구체적 사례와 수치 강조, 논리적 근거 제시, 적극적 추천 어조
+    - 예시: "저는 {inputs.requester_name}을 강력히 추천합니다. 특히 업무 수행 과정에서 보여준 역량은 입증된 사실입니다."
+  
+  * 선택된 톤({inputs.tone})에 맞는 위 특징을 엄격히 준수하여 일관된 문체와 어휘를 사용하세요.
+  * 예시 형식은 참고만 하고 똑같이 사용하지 마세요.
+  * 톤별 어휘와 표현 방식을 혼용하지 말고, 선택한 톤의 특징만 사용하세요.
+
 - 작성자: {inputs.recommender_name}
 - 요청자: {inputs.requester_name} / {inputs.requester_email}
 - 관계: {inputs.relationship or ""}
@@ -417,11 +459,11 @@ def build_recommendation_prompt(inputs: RecommendationRequest, score: int, recom
 [작성 예시 형식]
 추천서
 
-저는 [관계]로서 {inputs.requester_name}을 [기간]동안 함께 일하며 지켜본 {inputs.recommender_name}이다...
+저는 [관계]로서 {inputs.requester_name}님을 [기간]동안 함께 일하며 지켜본 {inputs.recommender_name}{'입니다' if not writing_style else (writing_style.get('common_phrases', ['입니다'])[0] if writing_style and writing_style.get('common_phrases') else '입니다')}...
 
-[본문 문단들...]
+[본문 문단들...]{' 🔴 모든 문장이 지정된 끝맺음으로 끝나야 함!' if writing_style else ''}
 
-위와 같은 이유로 {inputs.requester_name}을 추천합니다... (점수에 따라 추천 강도 조절)
+위와 같은 이유로 {inputs.requester_name}님을 적극 추천{'합니다' if not writing_style else (writing_style.get('common_phrases', ['합니다'])[1] if writing_style and len(writing_style.get('common_phrases', [])) > 1 else writing_style.get('common_phrases', ['합니다'])[0] if writing_style and writing_style.get('common_phrases') else '합니다')}... (점수에 따라 추천 강도 조절)
 
 
 {current_date}
@@ -438,10 +480,37 @@ def build_recommendation_prompt(inputs: RecommendationRequest, score: int, recom
 """
     return prompt.strip()
 
-def generate_single_score_recommendation(inputs: RecommendationRequest, score: int, recommender_email: str = "", user_details: dict = None, template_content: str = None) -> str:
-    prompt = build_recommendation_prompt(inputs, score, recommender_email, user_details, template_content)
-    result = llm.invoke(prompt)
-    return getattr(result, "content", str(result))
+def generate_single_score_recommendation(inputs: RecommendationRequest, score: int, recommender_email: str = "", user_details: dict = None, template_content: str = None, writing_style: dict = None, max_retries: int = 3) -> str:
+    """
+    추천서 생성 함수 (재시도 로직 포함)
+    OverloadedError(529) 발생 시 자동으로 재시도합니다.
+    """
+    prompt = build_recommendation_prompt(inputs, score, recommender_email, user_details, template_content, writing_style)
+    
+    for attempt in range(max_retries):
+        try:
+            result = llm.invoke(prompt)
+            return getattr(result, "content", str(result))
+        except Exception as e:
+            error_type = type(e).__name__
+            error_msg = str(e)
+            
+            # OverloadedError 또는 529 에러인 경우 재시도
+            is_overloaded = (
+                error_type == "OverloadedError" or
+                "overloaded" in error_msg.lower() or
+                "529" in error_msg or
+                (hasattr(e, 'status_code') and e.status_code == 529)
+            )
+            
+            if is_overloaded and attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 2  # 2초, 4초, 6초로 증가
+                print(f"⚠️ API 과부하 감지 (시도 {attempt + 1}/{max_retries}). {wait_time}초 후 재시도...")
+                time.sleep(wait_time)
+                continue
+            else:
+                # 재시도 불가능하거나 최대 재시도 횟수 초과
+                raise
 
 
 # ===== 인증 관련 모델 =====
@@ -536,6 +605,143 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     except Exception:
         raise HTTPException(status_code=500, detail="Database error")
 
+# ===== 문서 처리 함수 =====
+async def extract_text_from_file(file: UploadFile) -> str:
+    """
+    업로드된 문서 파일에서 텍스트 추출
+    지원 형식: TXT, DOCX, PDF
+    """
+    filename_lower = file.filename.lower() if file.filename else ""
+    content = await file.read()
+    
+    try:
+        if filename_lower.endswith('.txt'):
+            # TXT 파일: 인코딩 자동 감지
+            detected = chardet.detect(content)
+            encoding = detected.get('encoding', 'utf-8')
+            return content.decode(encoding)
+        
+        elif filename_lower.endswith('.docx'):
+            # DOCX 파일
+            doc = docx.Document(io.BytesIO(content))
+            return '\n'.join([paragraph.text for paragraph in doc.paragraphs])
+        
+        elif filename_lower.endswith('.pdf'):
+            # PDF 파일
+            pdf_reader = PyPDF2.PdfReader(io.BytesIO(content))
+            text_parts = []
+            for page in pdf_reader.pages:
+                text_parts.append(page.extract_text())
+            return '\n'.join(text_parts)
+        
+        else:
+            raise ValueError(f"지원하지 않는 파일 형식: {filename_lower}")
+    
+    except Exception as e:
+        raise ValueError(f"파일 텍스트 추출 실패: {str(e)}")
+
+def analyze_writing_style_with_ai(text: str) -> dict:
+    """
+    AI를 사용하여 텍스트의 문체 분석
+    Claude API 사용
+    """
+    # 너무 긴 텍스트는 앞부분만 사용 (토큰 제한)
+    sample_text = text[:5000] if len(text) > 5000 else text
+    
+    prompt = f"""
+다음 텍스트를 분석하여 작성자의 문체 특징을 파악해주세요.
+특히 **문장 끝맺음 표현**에 집중해주세요.
+
+텍스트:
+\"\"\"
+{sample_text}
+\"\"\"
+
+다음 형식의 JSON으로 응답해주세요:
+{{
+  "tone": "어조 (예: 친근한, 격식있는, 권위적인, 캐주얼한 등)",
+  "sentence_length": "문장 길이 (짧음/보통/김)",
+  "vocabulary_level": "어휘 수준 (일상적/학술적/전문적)",
+  "common_phrases": ["자주 사용하는 끝맺음 표현 3-5개 (예: ~하더라고요, ~네요, ~합니다 등)"],
+  "characteristics": ["기타 특징 2-3개"]
+}}
+
+**중요**: common_phrases는 실제로 텍스트에서 발견된 구체적인 끝맺음 표현을 포함해야 합니다.
+예: "~하더라고요", "~네요", "~거든요", "~했어요", "~ㅂ니다" 등
+"""
+    
+    try:
+        result = llm.invoke(prompt)
+        response_text = getattr(result, "content", str(result))
+        
+        # JSON 추출 (```json ... ``` 형식 처리)
+        json_match = re.search(r'```json\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+        if json_match:
+            response_text = json_match.group(1)
+        
+        style_data = json.loads(response_text)
+        return style_data
+    
+    except Exception as e:
+        raise ValueError(f"문체 분석 실패: {str(e)}")
+
+def parse_document_to_fields(document_text: str) -> dict:
+    """
+    Claude를 사용하여 이력서/문서 내용을 추천서 필드로 분류
+    (음성 입력과 동일한 방식)
+    """
+    try:
+        prompt = f"""다음은 사용자가 업로드한 이력서 또는 문서입니다.
+이 내용을 분석해서 추천서 작성에 필요한 각 필드에 적합한 내용으로 분류해주세요.
+
+문서 내용:
+{document_text}
+
+다음 JSON 형식으로 응답해주세요:
+{{
+  "relationship": "요청자와의 관계 (예: 지도교수, 상사, 동료 등)",
+  "strengths": "요청자의 주요 강점이나 장점 (학력, 경력, 기술, 수상경력, 자격증 등 포함)",
+  "memorable": "기억에 남는 일이나 특별한 성과 (프로젝트, 대회, 리더십 경험 등)",
+  "additional_info": "위 세 카테고리에 명확히 속하지 않는 추가 정보 (봉사활동, 동아리, 기타 특기사항 등)"
+}}
+
+주의사항:
+1. 각 필드는 간결하고 명확하게 작성
+2. 학력, 전공, 경력 정보는 strengths에 포함
+3. 특별한 성과는 memorable에 포함
+4. 애매한 내용은 additional_info에 포함
+5. 내용이 없는 필드는 빈 문자열 ""로 반환
+6. 반드시 JSON 형식만 반환 (다른 설명 없이)
+"""
+        
+        response = llm.invoke(prompt)
+        result_text = response.content.strip()
+        
+        # JSON 추출 (```json ``` 마크다운 제거)
+        if "```json" in result_text:
+            result_text = result_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in result_text:
+            result_text = result_text.split("```")[1].split("```")[0].strip()
+        
+        parsed_data = json.loads(result_text)
+        
+        return {
+            "relationship": parsed_data.get("relationship", ""),
+            "strengths": parsed_data.get("strengths", ""),
+            "memorable": parsed_data.get("memorable", ""),
+            "additional_info": parsed_data.get("additional_info", "")
+        }
+    
+    except Exception as e:
+        print(f"문서 필드 분류 오류: {e}")
+        # 실패 시 전체 텍스트를 additional_info에 넣음
+        return {
+            "relationship": "",
+            "strengths": "",
+            "memorable": "",
+            "additional_info": document_text[:1000]  # 너무 길면 잘라냄
+        }
+
 # 히스토리 파일(백업용)
 HISTORY_FILE = "recommendation_history.json"
 
@@ -555,6 +761,193 @@ def save_history(history_data):
             json.dump(history_data, f, ensure_ascii=False, indent=2)
     except Exception as e:
         print(f"히스토리 저장 오류: {e}")
+
+# ===== 문체 분석 API =====
+@app.post("/upload-writing-sample")
+async def upload_writing_sample(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    사용자의 글 샘플 업로드 및 문체 분석
+    분석 결과는 DB에 저장되어 추천서 생성 시 활용
+    """
+    user_id = current_user.get("id")
+    
+    # 1) 파일 타입 검증
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="파일명이 없습니다.")
+    
+    filename_lower = file.filename.lower()
+    if not (filename_lower.endswith('.txt') or 
+            filename_lower.endswith('.docx') or 
+            filename_lower.endswith('.pdf')):
+        raise HTTPException(
+            status_code=400, 
+            detail="지원하지 않는 파일 형식입니다. (.txt, .docx, .pdf만 가능)"
+        )
+    
+    # 2) 텍스트 추출
+    try:
+        text = await extract_text_from_file(file)
+        if not text or len(text.strip()) < 100:
+            raise HTTPException(
+                status_code=400, 
+                detail="텍스트가 너무 짧습니다. 최소 100자 이상의 글을 업로드해주세요."
+            )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+    # 3) AI 문체 분석
+    try:
+        style_analysis = analyze_writing_style_with_ai(text)
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    # 4) DB에 저장 (기존 데이터가 있으면 업데이트)
+    try:
+        with engine.connect() as conn:
+            # 기존 데이터 확인
+            check_sql = text("""
+                SELECT id FROM writing_styles 
+                WHERE userId = :user_id 
+                LIMIT 1
+            """)
+            existing = conn.execute(check_sql, {"user_id": user_id}).first()
+            
+            sample_text = text[:1000]  # 처음 1000자만 저장
+            style_json = json.dumps(style_analysis, ensure_ascii=False)
+            
+            if existing:
+                # 업데이트
+                update_sql = text("""
+                    UPDATE writing_styles
+                    SET styleAnalysis = :style_json,
+                        sampleText = :sample_text,
+                        originalFilename = :filename,
+                        updatedAt = NOW()
+                    WHERE userId = :user_id
+                """)
+                conn.execute(update_sql, {
+                    "style_json": style_json,
+                    "sample_text": sample_text,
+                    "filename": file.filename,
+                    "user_id": user_id
+                })
+            else:
+                # 신규 생성
+                insert_sql = text("""
+                    INSERT INTO writing_styles 
+                    (userId, styleAnalysis, sampleText, originalFilename, createdAt, updatedAt)
+                    VALUES (:user_id, :style_json, :sample_text, :filename, NOW(), NOW())
+                """)
+                conn.execute(insert_sql, {
+                    "user_id": user_id,
+                    "style_json": style_json,
+                    "sample_text": sample_text,
+                    "filename": file.filename
+                })
+            
+            conn.commit()
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB 저장 실패: {str(e)}")
+    
+    return {
+        "success": True,
+        "message": "문체 분석이 완료되었습니다!",
+        "style_analysis": style_analysis,
+        "filename": file.filename
+    }
+
+@app.get("/my-writing-style")
+async def get_my_writing_style(current_user: dict = Depends(get_current_user)):
+    """
+    로그인한 사용자의 저장된 문체 정보 조회
+    """
+    user_id = current_user.get("id")
+    
+    try:
+        with engine.connect() as conn:
+            sql = text("""
+                SELECT styleAnalysis, sampleText, originalFilename, updatedAt
+                FROM writing_styles
+                WHERE userId = :user_id
+                LIMIT 1
+            """)
+            row = conn.execute(sql, {"user_id": user_id}).first()
+            
+            if not row:
+                raise HTTPException(status_code=404, detail="저장된 문체 정보가 없습니다.")
+            
+            style_analysis = json.loads(row._mapping.get("styleAnalysis")) if row._mapping.get("styleAnalysis") else {}
+            
+            return {
+                "success": True,
+                "style_analysis": style_analysis,
+                "sample_text": row._mapping.get("sampleText"),
+                "original_filename": row._mapping.get("originalFilename"),
+                "updated_at": row._mapping.get("updatedAt").isoformat() if row._mapping.get("updatedAt") else None
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"조회 실패: {str(e)}")
+
+# ===== 문서 파싱 API =====
+@app.post("/parse-document")
+async def parse_document(file: UploadFile = File(...)):
+    """
+    이력서/문서 파일을 업로드하여 추천서 필드로 자동 분류
+    지원 형식: TXT, DOCX, PDF
+    """
+    print("=== 문서 파싱 요청 ===")
+    print(f"파일명: {file.filename}")
+    print(f"Content-Type: {file.content_type}")
+    
+    # 1. 파일 타입 검증
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="파일명이 없습니다.")
+    
+    filename_lower = file.filename.lower()
+    if not (filename_lower.endswith('.txt') or 
+            filename_lower.endswith('.docx') or 
+            filename_lower.endswith('.pdf')):
+        raise HTTPException(
+            status_code=400, 
+            detail="지원하지 않는 파일 형식입니다. (.txt, .docx, .pdf만 가능)"
+        )
+    
+    try:
+        # 2. 텍스트 추출
+        document_text = await extract_text_from_file(file)
+        print(f"추출된 텍스트 길이: {len(document_text)}자")
+        print(f"텍스트 미리보기: {document_text[:200]}...")
+        
+        if not document_text or len(document_text.strip()) < 50:
+            raise HTTPException(
+                status_code=400, 
+                detail="텍스트가 너무 짧습니다. 최소 50자 이상의 내용이 필요합니다."
+            )
+        
+        # 3. AI 분석: 텍스트 → 필드 분류
+        parsed_fields = parse_document_to_fields(document_text)
+        print(f"분류된 필드: {parsed_fields}")
+        
+        return {
+            "success": True,
+            "extracted_text": document_text[:500],  # 미리보기용 (처음 500자)
+            "fields": parsed_fields
+        }
+    
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        print(f"문서 파싱 오류: {e}")
+        raise HTTPException(status_code=500, detail=f"문서 처리 실패: {str(e)}")
 
 # ===== 음성 입력 처리 함수 =====
 async def transcribe_audio(audio_file: UploadFile) -> str:
@@ -980,12 +1373,28 @@ async def generate(request: RecommendationRequest):
         except Exception as e:
             print(f"양식 조회 오류 (계속 진행): {e}")
     
+    # 2-1) 작성자의 문체 정보 조회 (있는 경우)
+    writing_style = None
+    try:
+        with engine.connect() as conn:
+            style_sql = text("""
+                SELECT styleAnalysis FROM writing_styles
+                WHERE userId = :user_id
+                LIMIT 1
+            """)
+            style_row = conn.execute(style_sql, {"user_id": from_user.id}).first()
+            if style_row and style_row._mapping.get("styleAnalysis"):
+                writing_style = json.loads(style_row._mapping.get("styleAnalysis"))
+                print(f"문체 정보 로드 완료 (사용자 ID: {from_user.id})")
+    except Exception as e:
+        print(f"문체 정보 조회 오류 (계속 진행): {e}")
+    
     # 3) 추천서 텍스트 생성
     try:
         score = int(request.selected_score)
-        print(f"추천서 생성 시작 (점수: {score})")
+        print(f"추천서 생성 시작 (점수: {score}, 문체 반영: {bool(writing_style)})")
         recommender_email = from_user.email if from_user and from_user.email else ""
-        recommendation = generate_single_score_recommendation(request, score, recommender_email, user_details, template_content)
+        recommendation = generate_single_score_recommendation(request, score, recommender_email, user_details, template_content, writing_style)
         print(f"추천서 생성 완료 (길이: {len(recommendation)} 자)")
     except Exception as e:
         error_msg = str(e)
@@ -1046,6 +1455,15 @@ async def generate(request: RecommendationRequest):
             )
         )
         
+        # OverloadedError (529) 처리
+        is_overloaded = (
+            error_type == "OverloadedError" or
+            "overloaded" in error_msg.lower() or
+            "529" in error_msg or
+            error_code == 529 or
+            error_type_name == 'overloaded_error'
+        )
+        
         # 429 에러는 Rate Limit일 수도 있고 Quota일 수도 있음
         is_429 = "429" in error_msg or error_type == "RateLimitError"
         
@@ -1059,6 +1477,11 @@ async def generate(request: RecommendationRequest):
             raise HTTPException(
                 status_code=429,
                 detail="요청 빈도가 너무 높습니다. 잠시 후 다시 시도해주세요. (Rate Limit Exceeded)"
+            )
+        elif is_overloaded:
+            raise HTTPException(
+                status_code=503,
+                detail="Anthropic API 서버가 일시적으로 과부하 상태입니다. 잠시 후 다시 시도해주세요. (Error: Overloaded - 재시도 로직이 이미 실행되었지만 실패했습니다)"
             )
         # 429 에러이지만 rate_limit도 quota도 아닌 경우
         elif is_429:
@@ -1230,47 +1653,47 @@ async def delete_history_item(item_id: int):
 # ===== 인증 API =====
 @app.post("/register")
 async def register(user: UserRegister):
-    try:
-        with engine.begin() as conn:  # begin()을 사용하여 자동 커밋
-            existing_user = conn.execute(
-                text("SELECT id FROM users WHERE email = :email AND deletedAt IS NULL"),
-                {"email": user.email}
-            ).first()
-            if existing_user:
-                raise HTTPException(status_code=400, detail="Email already registered")
-            
-            hashed_password = hash_password(user.password)
-            
-            # ▼ 마이그레이션 컬럼명과 동일하게 INSERT
-            #   users(email,password,serialNumber,nickname,gender,birth,phone,postCode,address,addressDetail,avatar,createdAt,updatedAt)
-            conn.execute(
-                text("""
-                    INSERT INTO users (
-                        email, password, serialNumber, nickname, gender, birth,
-                        phone, postCode, address, addressDetail, avatar,
-                        createdAt, updatedAt
-                    )
-                    VALUES (
-                        :email, :password, :serialNumber, :nickname, :gender, :birth,
-                        :phone, :postCode, :address, :addressDetail, :avatar,
-                        NOW(), NOW()
-                    )
-                """),
-                {
-                    "email": user.email,
-                    "password": hashed_password,
-                    "serialNumber": user.serialNumber,
-                    "nickname": user.nickname,
-                    "gender": user.gender,
-                    "birth": user.birth,
-                    "phone": user.phone,
-                    "postCode": user.postCode,
-                    "address": user.address,
-                    "addressDetail": user.addressDetail,
-                    "avatar": user.avatar
-                }
-            )
-            # begin()을 사용하면 자동으로 커밋됨
+    with engine.connect() as conn:
+        existing_user = conn.execute(
+            text("SELECT id FROM users WHERE email = :email"),
+            {"email": user.email}
+        ).first()
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Email already registered")
+        
+        hashed_password = hash_password(user.password)
+        
+        # ▼ 마이그레이션 컬럼명과 동일하게 INSERT
+        #   users(email,password,serialNumber,nickname,gender,birth,phone,postCode,address,addressDetail,avatar,createdAt,updatedAt)
+        #   참고: 마이그레이션 스키마 :contentReference[oaicite:7]{index=7}
+        conn.execute(
+            text("""
+                INSERT INTO users (
+                    email, password, serialNumber, nickname, gender, birth,
+                    phone, postCode, address, addressDetail, avatar,
+                    createdAt, updatedAt
+                )
+                VALUES (
+                    :email, :password, :serialNumber, :nickname, :gender, :birth,
+                    :phone, :postCode, :address, :addressDetail, :avatar,
+                    NOW(), NOW()
+                )
+            """),
+            {
+                "email": user.email,
+                "password": hashed_password,
+                "serialNumber": user.serialNumber,
+                "nickname": user.nickname,
+                "gender": user.gender,
+                "birth": user.birth,
+                "phone": user.phone,
+                "postCode": user.postCode,
+                "address": user.address,
+                "addressDetail": user.addressDetail,
+                "avatar": user.avatar
+            }
+        )
+        conn.commit()
         
         access_token = create_access_token({"sub": user.email})
         return Token(
@@ -1281,53 +1704,38 @@ async def register(user: UserRegister):
                 "nickname": user.nickname
             }
         )
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Register error: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @app.post("/login")
 async def login(user: UserLogin):
-    try:
-        with engine.connect() as conn:
-            result = conn.execute(
-                text("SELECT * FROM users WHERE email = :email AND deletedAt IS NULL"),
-                {"email": user.email},
-            ).first()
-            if not result:
-                raise HTTPException(status_code=401, detail="Invalid email or password")
-
-        user_row = dict(result._mapping)
-        stored_hash = user_row.get("password")
-
-        try:
-            ok = pwd_context.verify(user.password, stored_hash)
-        except Exception:
-            ok = False
-        if not ok:
+    with engine.connect() as conn:
+        result = conn.execute(
+            text("SELECT * FROM users WHERE email = :email AND deletedAt IS NULL"),
+            {"email": user.email},
+        ).first()
+        if not result:
             raise HTTPException(status_code=401, detail="Invalid email or password")
 
-        token = create_access_token({"sub": user.email})
-        return Token(
-            access_token=token,
-            token_type="bearer",
-            user={
-                "id": user_row.get("id"),
-                "email": user_row.get("email"),
-                "name": user_row.get("name"),
-                "nickname": user_row.get("nickname"),
-            },
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Login error: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+    user_row = dict(result._mapping)
+    stored_hash = user_row.get("password")
+
+    try:
+        ok = pwd_context.verify(user.password, stored_hash)
+    except Exception:
+        ok = False
+    if not ok:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    token = create_access_token({"sub": user.email})
+    return Token(
+        access_token=token,
+        token_type="bearer",
+        user={
+            "id": user_row.get("id"),
+            "email": user_row.get("email"),
+            "name": user_row.get("name"),
+            "nickname": user_row.get("nickname"),
+        },
+    )
 
 @app.get("/me")
 async def read_users_me(current_user: dict = Depends(get_current_user)):
@@ -1343,43 +1751,19 @@ async def generate_hash(password: str):
     print(f"Generated hash for '{password}': {hashed}")
     return {"hash": hashed}
 
-# ===== 이메일 기반 조회 =====
+# ===== 이름 기반 조회 =====
 class LookupRequest(BaseModel):
-    search: str  # 이메일로만 검색
+    search: str  # 닉네임으로 검색
 
 @app.post("/lookup")
-async def lookup(req: LookupRequest, current_user: dict = Depends(get_current_user)):
-    search_email = req.search.strip()
-    
-    # 이메일 형식 검증
-    if "@" not in search_email:
-        raise HTTPException(
-            status_code=400,
-            detail="올바른 이메일 형식으로 입력해주세요."
-        )
-    
-    email_parts = search_email.split("@")
-    if len(email_parts) != 2 or "." not in email_parts[1]:
-        raise HTTPException(
-            status_code=400,
-            detail="올바른 이메일 형식으로 입력해주세요."
-        )
-    
-    # 자신의 이메일로 검색하는 경우 차단
-    if search_email.lower() == current_user.get("email", "").lower():
-        raise HTTPException(
-            status_code=400,
-            detail="자신의 이메일로는 검색할 수 없습니다."
-        )
-    
-    # 이메일로만 검색
+async def lookup(req: LookupRequest):
     users_sql = text("""
         SELECT DISTINCT
             u.id       AS user_id,
             u.nickname AS nickname,
             u.email    AS email
         FROM users u
-        WHERE TRIM(LOWER(u.email)) = TRIM(LOWER(:search))
+        WHERE u.email = :search
         AND u.deletedAt IS NULL
     """)
 
@@ -1434,6 +1818,7 @@ async def lookup(req: LookupRequest, current_user: dict = Depends(get_current_us
                 "id": user_id,
                 "email": user._mapping.get("email"),
                 "nickname": user._mapping.get("nickname"),
+                "name": user._mapping.get("nickname"),  # name 컬럼이 없으므로 nickname 사용
                 "workspaces": workspaces,
                 "reference_count": total_count
             })
@@ -1500,9 +1885,8 @@ async def refine_recommendation(req: RefineRecommendationRequest):
 **중요: 사용자가 수정한 아래 추천서 내용이 최우선입니다. 이 내용을 기반으로 개선사항만 반영하세요.**
 
 아래는 사용자가 직접 작성/수정한 추천서와 개선 요청사항입니다.
-목표는 "사용자의 현재 문서"를 최대한 보존하면서, 요청된 개선점만 정밀 반영한 최종본을 만드는 것입니다.
-출력은 한국어만 사용합니다. 고유명사 외 영문 표현 금지.
-- 높임 표현(~했습니다, ~합니다 등) 사용을 지양하고, 평서문 형태로 작성합니다.
+목표는 “사용자의 현재 문서”를 최대한 보존하면서, 요청된 개선점만 정밀 반영한 최종본을 만드는 것입니다.
+출력은 한국어(존댓말)만 사용합니다. 고유명사 외 영문 표현 금지.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [현재 추천서(사용자 수정본)]
@@ -1570,10 +1954,53 @@ async def refine_recommendation(req: RefineRecommendationRequest):
 
 # ===== 사용자 상세 정보 조회 API =====
 @app.get("/user-details/{user_id}")
-async def get_user_details(user_id: int):
+async def get_user_details(user_id: int, requester_email: Optional[str] = None):
     """사용자의 상세 정보(경력, 수상이력, 자격증, 강점, 평판, 프로젝트)를 조회합니다."""
     try:
         with engine.connect() as conn:
+            # 권한 확인 로직
+            # 1. requester_email이 없으면 → 권한 확인 없이 조회 (기존 동작 유지)
+            # 2. 본인이면 → 조회 허용
+            # 3. 권한이 있으면 → 조회 허용
+            # 4. 권한이 없으면 → 403 Forbidden
+            
+            # requester_email이 있고 비어있지 않으면 권한 확인
+            if requester_email and requester_email.strip():
+                # 사용자 정보 가져오기
+                user_row = conn.execute(text("""
+                    SELECT id, email FROM users WHERE id = :uid AND deletedAt IS NULL
+                """), {"uid": user_id}).first()
+                
+                if not user_row:
+                    raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+                
+                owner_email = user_row._mapping.get("email")
+                if not owner_email:
+                    raise HTTPException(status_code=404, detail="사용자 이메일을 찾을 수 없습니다.")
+                
+                requester_email_clean = requester_email.strip().lower()
+                owner_email_clean = owner_email.strip().lower()
+                
+                # 본인인지 확인
+                if owner_email_clean == requester_email_clean:
+                    # 본인이면 조회 허용
+                    pass
+                else:
+                    # 권한 확인
+                    perm = conn.execute(text("""
+                        SELECT id FROM userDetailPermissions
+                        WHERE ownerEmail = :owner_email AND allowedEmail = :requester_email AND deletedAt IS NULL
+                    """), {
+                        "owner_email": owner_email_clean,
+                        "requester_email": requester_email_clean
+                    }).first()
+                    
+                    if not perm:
+                        raise HTTPException(
+                            status_code=403, 
+                            detail="상세정보를 볼 권한이 없습니다. 추천받는 분께 권한을 요청하세요."
+                        )
+            
             experiences_sql = text("""
                 SELECT id, company, position, startDate, endDate, description
                 FROM userExperiences
@@ -2252,20 +2679,38 @@ class ExperienceUpsert(BaseModel):
 @app.post("/profile/experiences")
 async def create_experience(payload: ExperienceUpsert, current_user: dict = Depends(get_current_user)):
     with engine.begin() as conn:
+        # 빈 문자열을 None으로 변환
+        data = payload.model_dump()
+        if data.get("startDate") == "":
+            data["startDate"] = None
+        if data.get("endDate") == "":
+            data["endDate"] = None
+        if data.get("description") == "":
+            data["description"] = None
+        
         r = conn.execute(text("""
             INSERT INTO userExperiences (userId, company, position, startDate, endDate, description, createdAt, updatedAt)
             VALUES (:uid, :company, :position, :startDate, :endDate, :description, NOW(), NOW())
-        """), {"uid": current_user["id"], **payload.model_dump()})
+        """), {"uid": current_user["id"], **data})
         return {"id": r.lastrowid}
 
 @app.put("/profile/experiences/{item_id}")
 async def update_experience(item_id: int, payload: ExperienceUpsert, current_user: dict = Depends(get_current_user)):
     with engine.begin() as conn:
+        # 빈 문자열을 None으로 변환
+        data = payload.model_dump()
+        if data.get("startDate") == "":
+            data["startDate"] = None
+        if data.get("endDate") == "":
+            data["endDate"] = None
+        if data.get("description") == "":
+            data["description"] = None
+        
         conn.execute(text("""
             UPDATE userExperiences
             SET company=:company, position=:position, startDate=:startDate, endDate=:endDate, description=:description, updatedAt=NOW()
             WHERE id=:id AND userId=:uid AND deletedAt IS NULL
-        """), {"id": item_id, "uid": current_user["id"], **payload.model_dump()})
+        """), {"id": item_id, "uid": current_user["id"], **data})
     return {"updated": True}
 
 @app.delete("/profile/experiences/{item_id}")
@@ -2305,20 +2750,38 @@ async def list_awards(current_user: dict = Depends(get_current_user)):
 @app.post("/profile/awards")
 async def create_award(payload: AwardUpsert, current_user: dict = Depends(get_current_user)):
     with engine.begin() as conn:
+        # 빈 문자열을 None으로 변환
+        data = payload.model_dump()
+        if data.get("awardDate") == "":
+            data["awardDate"] = None
+        if data.get("organization") == "":
+            data["organization"] = None
+        if data.get("description") == "":
+            data["description"] = None
+        
         r = conn.execute(text("""
             INSERT INTO userAwards (userId, title, organization, awardDate, description, createdAt, updatedAt)
             VALUES (:uid, :title, :organization, :awardDate, :description, NOW(), NOW())
-        """), {"uid": current_user["id"], **payload.model_dump()})
+        """), {"uid": current_user["id"], **data})
         return {"id": r.lastrowid}
 
 @app.put("/profile/awards/{item_id}")
 async def update_award(item_id: int, payload: AwardUpsert, current_user: dict = Depends(get_current_user)):
     with engine.begin() as conn:
+        # 빈 문자열을 None으로 변환
+        data = payload.model_dump()
+        if data.get("awardDate") == "":
+            data["awardDate"] = None
+        if data.get("organization") == "":
+            data["organization"] = None
+        if data.get("description") == "":
+            data["description"] = None
+        
         conn.execute(text("""
             UPDATE userAwards
             SET title=:title, organization=:organization, awardDate=:awardDate, description=:description, updatedAt=NOW()
             WHERE id=:id AND userId=:uid AND deletedAt IS NULL
-        """), {"id": item_id, "uid": current_user["id"], **payload.model_dump()})
+        """), {"id": item_id, "uid": current_user["id"], **data})
     return {"updated": True}
 
 @app.delete("/profile/awards/{item_id}")
@@ -2360,20 +2823,42 @@ async def list_certs(current_user: dict = Depends(get_current_user)):
 @app.post("/profile/certifications")
 async def create_cert(payload: CertUpsert, current_user: dict = Depends(get_current_user)):
     with engine.begin() as conn:
+        # 빈 문자열을 None으로 변환
+        data = payload.model_dump()
+        if data.get("issueDate") == "":
+            data["issueDate"] = None
+        if data.get("expiryDate") == "":
+            data["expiryDate"] = None
+        if data.get("issuer") == "":
+            data["issuer"] = None
+        if data.get("certificationNumber") == "":
+            data["certificationNumber"] = None
+        
         r = conn.execute(text("""
             INSERT INTO userCertifications (userId, name, issuer, issueDate, expiryDate, certificationNumber, createdAt, updatedAt)
             VALUES (:uid, :name, :issuer, :issueDate, :expiryDate, :certificationNumber, NOW(), NOW())
-        """), {"uid": current_user["id"], **payload.model_dump()})
+        """), {"uid": current_user["id"], **data})
         return {"id": r.lastrowid}
 
 @app.put("/profile/certifications/{item_id}")
 async def update_cert(item_id: int, payload: CertUpsert, current_user: dict = Depends(get_current_user)):
     with engine.begin() as conn:
+        # 빈 문자열을 None으로 변환
+        data = payload.model_dump()
+        if data.get("issueDate") == "":
+            data["issueDate"] = None
+        if data.get("expiryDate") == "":
+            data["expiryDate"] = None
+        if data.get("issuer") == "":
+            data["issuer"] = None
+        if data.get("certificationNumber") == "":
+            data["certificationNumber"] = None
+        
         conn.execute(text("""
             UPDATE userCertifications
             SET name=:name, issuer=:issuer, issueDate=:issueDate, expiryDate=:expiryDate, certificationNumber=:certificationNumber, updatedAt=NOW()
             WHERE id=:id AND userId=:uid AND deletedAt IS NULL
-        """), {"id": item_id, "uid": current_user["id"], **payload.model_dump()})
+        """), {"id": item_id, "uid": current_user["id"], **data})
     return {"updated": True}
 
 @app.delete("/profile/certifications/{item_id}")
@@ -2421,20 +2906,54 @@ async def list_projects(current_user: dict = Depends(get_current_user)):
 @app.post("/profile/projects")
 async def create_project(payload: ProjectUpsert, current_user: dict = Depends(get_current_user)):
     with engine.begin() as conn:
+        # 빈 문자열을 None으로 변환
+        data = payload.model_dump()
+        if data.get("startDate") == "":
+            data["startDate"] = None
+        if data.get("endDate") == "":
+            data["endDate"] = None
+        if data.get("role") == "":
+            data["role"] = None
+        if data.get("description") == "":
+            data["description"] = None
+        if data.get("technologies") == "":
+            data["technologies"] = None
+        if data.get("achievement") == "":
+            data["achievement"] = None
+        if data.get("url") == "":
+            data["url"] = None
+        
         r = conn.execute(text("""
             INSERT INTO userProjects (userId, title, role, startDate, endDate, description, technologies, achievement, url, createdAt, updatedAt)
             VALUES (:uid, :title, :role, :startDate, :endDate, :description, :technologies, :achievement, :url, NOW(), NOW())
-        """), {"uid": current_user["id"], **payload.model_dump()})
+        """), {"uid": current_user["id"], **data})
         return {"id": r.lastrowid}
 
 @app.put("/profile/projects/{item_id}")
 async def update_project(item_id: int, payload: ProjectUpsert, current_user: dict = Depends(get_current_user)):
     with engine.begin() as conn:
+        # 빈 문자열을 None으로 변환
+        data = payload.model_dump()
+        if data.get("startDate") == "":
+            data["startDate"] = None
+        if data.get("endDate") == "":
+            data["endDate"] = None
+        if data.get("role") == "":
+            data["role"] = None
+        if data.get("description") == "":
+            data["description"] = None
+        if data.get("technologies") == "":
+            data["technologies"] = None
+        if data.get("achievement") == "":
+            data["achievement"] = None
+        if data.get("url") == "":
+            data["url"] = None
+        
         conn.execute(text("""
             UPDATE userProjects
             SET title=:title, role=:role, startDate=:startDate, endDate=:endDate, description=:description, technologies=:technologies, achievement=:achievement, url=:url, updatedAt=NOW()
             WHERE id=:id AND userId=:uid AND deletedAt IS NULL
-        """), {"id": item_id, "uid": current_user["id"], **payload.model_dump()})
+        """), {"id": item_id, "uid": current_user["id"], **data})
     return {"updated": True}
 
 @app.delete("/profile/projects/{item_id}")
@@ -2495,7 +3014,7 @@ async def delete_strength(item_id: int, current_user: dict = Depends(get_current
     return {"deleted": True}
 
 # ===== Reputations =====
-class ReputationCreate(BaseModel):
+class ReputationUpsert(BaseModel):
     target_user_id: int
     category: str
     rating: int
@@ -2525,106 +3044,48 @@ async def list_reputations(current_user: dict = Depends(get_current_user)):
         return {"items": out}
 
 @app.post("/profile/reputations")
-async def create_reputation(payload: ReputationCreate, current_user: dict = Depends(get_current_user)):
-    """평판을 생성합니다."""
-    # 자신에게 평판을 작성하는 경우 차단
-    if payload.target_user_id == current_user["id"]:
-        raise HTTPException(
-            status_code=400,
-            detail="자신에게는 평판을 작성할 수 없습니다."
-        )
-    
-    # 평점 범위 검증
-    if payload.rating < 1 or payload.rating > 5:
-        raise HTTPException(
-            status_code=400,
-            detail="평점은 1-5 사이의 값이어야 합니다."
-        )
-    
-    # 코멘트 검증
-    if not payload.comment or not payload.comment.strip():
-        raise HTTPException(
-            status_code=400,
-            detail="코멘트를 입력해주세요."
-        )
-    
-    # 카테고리 검증
-    if not payload.category or not payload.category.strip():
-        raise HTTPException(
-            status_code=400,
-            detail="카테고리를 선택해주세요."
-        )
-    
-    try:
-        with engine.begin() as conn:
-            # 대상 사용자 존재 확인
-            target_user = conn.execute(text("""
-                SELECT id FROM users
-                WHERE id = :target_id AND deletedAt IS NULL
-                LIMIT 1
-            """), {"target_id": payload.target_user_id}).first()
-            
-            if not target_user:
-                raise HTTPException(
-                    status_code=404,
-                    detail="평가 대상 사용자를 찾을 수 없습니다."
-                )
-            
-            # 평판 생성
-            result = conn.execute(text("""
-                INSERT INTO userReputations
-                    (userId, fromUserId, category, rating, comment, createdAt, updatedAt)
-                VALUES
-                    (:target_id, :from_id, :category, :rating, :comment, NOW(), NOW())
-            """), {
-                "target_id": payload.target_user_id,
-                "from_id": current_user["id"],
-                "category": payload.category.strip(),
-                "rating": payload.rating,
-                "comment": payload.comment.strip()
-            })
-            
-            return {
-                "id": result.lastrowid,
-                "message": "평판이 작성되었습니다."
-            }
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"평판 생성 오류: {e}")
-        raise HTTPException(status_code=500, detail="평판 작성 실패")
+async def create_reputation(payload: ReputationUpsert, current_user: dict = Depends(get_current_user)):
+    with engine.begin() as conn:
+        # 빈 문자열을 None으로 변환
+        comment = payload.comment.strip() if payload.comment else None
+        
+        r = conn.execute(text("""
+            INSERT INTO userReputations (userId, fromUserId, rating, comment, category, createdAt, updatedAt)
+            VALUES (:target_user_id, :from_user_id, :rating, :comment, :category, NOW(), NOW())
+        """), {
+            "target_user_id": payload.target_user_id,
+            "from_user_id": current_user["id"],
+            "rating": payload.rating,
+            "comment": comment,
+            "category": payload.category
+        })
+        return {"id": r.lastrowid}
 
-@app.delete("/profile/reputations/{rep_id}")
-async def delete_reputation(rep_id: int, current_user: dict = Depends(get_current_user)):
-    """평판을 삭제합니다 (작성자만 삭제 가능)."""
-    try:
-        with engine.begin() as conn:
-            # 평판이 존재하고 작성자인지 확인
-            rep = conn.execute(text("""
-                SELECT id, fromUserId
-                FROM userReputations
-                WHERE id = :rep_id AND deletedAt IS NULL
-            """), {"rep_id": rep_id}).first()
-            
-            if not rep:
-                raise HTTPException(status_code=404, detail="평판을 찾을 수 없습니다.")
-            
-            if rep._mapping.get("fromUserId") != current_user["id"]:
-                raise HTTPException(status_code=403, detail="본인이 작성한 평판만 삭제할 수 있습니다.")
-            
-            # 소프트 삭제
-            conn.execute(text("""
-                UPDATE userReputations
-                SET deletedAt = NOW(), updatedAt = NOW()
-                WHERE id = :rep_id
-            """), {"rep_id": rep_id})
-            
-            return {"message": "평판이 삭제되었습니다."}
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"평판 삭제 오류: {e}")
-        raise HTTPException(status_code=500, detail="평판 삭제 실패")
+@app.delete("/profile/reputations/{item_id}")
+async def delete_reputation(item_id: int, current_user: dict = Depends(get_current_user)):
+    with engine.begin() as conn:
+        # 작성자만 삭제 가능하도록 체크
+        check = conn.execute(text("""
+            SELECT fromUserId FROM userReputations 
+            WHERE id = :id AND deletedAt IS NULL
+        """), {"id": item_id}).first()
+        
+        if not check:
+            raise HTTPException(status_code=404, detail="평판을 찾을 수 없습니다.")
+        
+        if check._mapping.get("fromUserId") != current_user["id"]:
+            raise HTTPException(status_code=403, detail="본인이 작성한 평판만 삭제할 수 있습니다.")
+        
+        # fromUserId로 삭제 (userId가 아닌 fromUserId로 체크)
+        r = conn.execute(text("""
+            UPDATE userReputations
+            SET deletedAt = NOW(), updatedAt = NOW()
+            WHERE id = :id AND fromUserId = :uid AND deletedAt IS NULL
+        """), {"id": item_id, "uid": current_user["id"]})
+        
+        if r.rowcount == 0:
+            raise HTTPException(status_code=404, detail="평판을 찾을 수 없습니다.")
+    return {"deleted": True}
 
 # ===== 추천서 보관함 API =====
 @app.get("/my-recommendations/sent")
@@ -2651,7 +3112,6 @@ async def my_recommendations_sent(current_user: dict = Depends(get_current_user)
 # ===== 평판 보관함 API =====
 @app.get("/my-reputations/sent")
 async def my_reputations_sent(current_user: dict = Depends(get_current_user)):
-    """작성한 평판 목록을 조회합니다."""
     with engine.connect() as conn:
         rows = conn.execute(text("""
             SELECT 
@@ -2675,11 +3135,206 @@ async def my_reputations_sent(current_user: dict = Depends(get_current_user)):
             "rating": m.get("rating"),
             "comment": m.get("comment"),
             "category": m.get("category"),
-            "created_at": m.get("createdAt").strftime("%Y-%m-%d %H:%M:%S") if m.get("createdAt") else "",
             "target_name": m.get("target_name"),
             "target_email": m.get("target_email"),
+            "created_at": m.get("createdAt").strftime("%Y-%m-%d %H:%M:%S") if m.get("createdAt") else "",
         })
     return {"items": items}
+
+# ===== 권한 관리 API =====
+class GrantPermissionRequest(BaseModel):
+    user_id: Optional[int] = None
+    user_email: Optional[str] = None
+    allowed_email: str
+    note: Optional[str] = None
+
+class RevokePermissionRequest(BaseModel):
+    user_id: Optional[int] = None
+    user_email: Optional[str] = None
+    allowed_email: str
+
+@app.post("/grant-detail-permission")
+async def grant_detail_permission(payload: GrantPermissionRequest, current_user: dict = Depends(get_current_user)):
+    """상세정보 조회 권한 부여"""
+    with engine.begin() as conn:
+        # user_id 또는 user_email로 사용자 찾기
+        user_id = payload.user_id
+        owner_email = None
+        
+        if not user_id and payload.user_email:
+            # 이메일 공백 제거 및 소문자 변환
+            email_clean = payload.user_email.strip().lower()
+            user_row = conn.execute(text("""
+                SELECT id, email FROM users WHERE LOWER(TRIM(email)) = :email AND deletedAt IS NULL
+            """), {"email": email_clean}).first()
+            if not user_row:
+                raise HTTPException(status_code=404, detail=f"이메일 '{payload.user_email}'로 사용자를 찾을 수 없습니다.")
+            user_id = user_row._mapping.get("id")
+            owner_email = user_row._mapping.get("email")
+        elif not user_id:
+            # 둘 다 없으면 현재 로그인한 사용자 사용
+            user_id = current_user["id"]
+            # 현재 사용자의 이메일 가져오기
+            user_row = conn.execute(text("""
+                SELECT email FROM users WHERE id = :uid AND deletedAt IS NULL
+            """), {"uid": user_id}).first()
+            if user_row:
+                owner_email = user_row._mapping.get("email")
+        
+        # owner_email이 없으면 payload.user_email 사용
+        if not owner_email:
+            if payload.user_email:
+                owner_email = payload.user_email.strip().lower()
+            else:
+                raise HTTPException(status_code=400, detail="권한 소유자 이메일을 확인할 수 없습니다.")
+        
+        # 중복 체크 (deletedAt이 NULL인 것만) - ownerEmail 기준으로 체크
+        existing = conn.execute(text("""
+            SELECT id FROM userDetailPermissions 
+            WHERE ownerEmail = :owner_email AND allowedEmail = :email AND deletedAt IS NULL
+        """), {"owner_email": owner_email, "email": payload.allowed_email}).first()
+        
+        if existing:
+            raise HTTPException(status_code=409, detail="이미 권한이 부여되어 있습니다.")
+        
+        # 권한 부여
+        conn.execute(text("""
+            INSERT INTO userDetailPermissions (userId, ownerEmail, allowedEmail, note, createdAt, updatedAt)
+            VALUES (:uid, :owner_email, :email, :note, NOW(), NOW())
+        """), {
+            "uid": user_id,
+            "owner_email": owner_email,
+            "email": payload.allowed_email,
+            "note": payload.note
+        })
+    
+    return {"message": f"{payload.allowed_email}에게 상세정보 조회 권한을 부여했습니다.", "success": True}
+
+@app.post("/revoke-detail-permission")
+async def revoke_detail_permission(payload: RevokePermissionRequest, current_user: dict = Depends(get_current_user)):
+    """상세정보 조회 권한 취소"""
+    with engine.begin() as conn:
+        # user_id 또는 user_email로 사용자 찾기
+        user_id = payload.user_id
+        if not user_id and payload.user_email:
+            # 이메일 공백 제거 및 소문자 변환
+            email_clean = payload.user_email.strip().lower()
+            user_row = conn.execute(text("""
+                SELECT id FROM users WHERE LOWER(TRIM(email)) = :email AND deletedAt IS NULL
+            """), {"email": email_clean}).first()
+            if not user_row:
+                raise HTTPException(status_code=404, detail=f"이메일 '{payload.user_email}'로 사용자를 찾을 수 없습니다.")
+            user_id = user_row._mapping.get("id")
+        elif not user_id:
+            # 둘 다 없으면 현재 로그인한 사용자 사용
+            user_id = current_user["id"]
+        
+        # owner_email 가져오기
+        owner_email = None
+        if payload.user_email:
+            owner_email = payload.user_email.strip().lower()
+        elif user_id:
+            user_row = conn.execute(text("""
+                SELECT email FROM users WHERE id = :uid AND deletedAt IS NULL
+            """), {"uid": user_id}).first()
+            if user_row:
+                owner_email = user_row._mapping.get("email")
+        
+        if not owner_email:
+            raise HTTPException(status_code=400, detail="권한 소유자 이메일을 확인할 수 없습니다.")
+        
+        # 권한 취소 (soft delete) - ownerEmail 기준으로 체크
+        r = conn.execute(text("""
+            UPDATE userDetailPermissions
+            SET deletedAt = NOW(), updatedAt = NOW()
+            WHERE ownerEmail = :owner_email AND allowedEmail = :email AND deletedAt IS NULL
+        """), {"owner_email": owner_email, "email": payload.allowed_email})
+        
+        if r.rowcount == 0:
+            raise HTTPException(status_code=404, detail="권한을 찾을 수 없습니다.")
+    
+    return {"message": f"{payload.allowed_email}의 조회 권한을 취소했습니다.", "success": True}
+
+@app.get("/my-permissions/{user_id}")
+async def get_my_permissions(user_id: int, user_email: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """부여한 권한 목록 조회"""
+    with engine.connect() as conn:
+        # user_id가 0이면 user_email로 조회
+        actual_user_id = user_id
+        if user_id == 0 and user_email:
+            # 이메일 공백 제거 및 소문자 변환
+            email_clean = user_email.strip().lower()
+            user_row = conn.execute(text("""
+                SELECT id FROM users WHERE LOWER(TRIM(email)) = :email AND deletedAt IS NULL
+            """), {"email": email_clean}).first()
+            if user_row:
+                actual_user_id = user_row._mapping.get("id")
+            else:
+                return {"permissions": [], "total": 0}
+        
+        # ownerEmail 가져오기
+        owner_email = None
+        if user_email:
+            owner_email = user_email.strip().lower()
+        elif actual_user_id:
+            user_row = conn.execute(text("""
+                SELECT email FROM users WHERE id = :uid AND deletedAt IS NULL
+            """), {"uid": actual_user_id}).first()
+            if user_row:
+                owner_email = user_row._mapping.get("email")
+        
+        if not owner_email:
+            return {"permissions": [], "total": 0}
+        
+        rows = conn.execute(text("""
+            SELECT allowedEmail, note, createdAt
+            FROM userDetailPermissions
+            WHERE ownerEmail = :owner_email AND deletedAt IS NULL
+            ORDER BY createdAt DESC
+        """), {"owner_email": owner_email}).fetchall()
+        
+        permissions = []
+        for row in rows:
+            m = row._mapping
+            permissions.append({
+                "allowedEmail": m.get("allowedEmail"),
+                "note": m.get("note"),
+                "createdAt": m.get("createdAt").strftime("%Y-%m-%d %H:%M:%S") if m.get("createdAt") else None
+            })
+        
+        return {"permissions": permissions, "total": len(permissions)}
+
+@app.get("/check-detail-permission/{user_id}")
+async def check_detail_permission(user_id: int, requester_email: Optional[str] = None):
+    """상세정보 조회 권한 확인"""
+    if not requester_email:
+        return {"hasPermission": False, "reason": "요청자 이메일이 필요합니다."}
+    
+    with engine.connect() as conn:
+        # 사용자 이메일 가져오기
+        user_row = conn.execute(text("""
+            SELECT email FROM users WHERE id = :uid AND deletedAt IS NULL
+        """), {"uid": user_id}).first()
+        
+        if not user_row:
+            return {"hasPermission": False, "reason": "사용자를 찾을 수 없습니다."}
+        
+        owner_email = user_row._mapping.get("email")
+        
+        # 권한 확인 - ownerEmail 기준으로 체크
+        perm = conn.execute(text("""
+            SELECT note FROM userDetailPermissions
+            WHERE ownerEmail = :owner_email AND allowedEmail = :email AND deletedAt IS NULL
+        """), {"owner_email": owner_email, "email": requester_email}).first()
+        
+        if perm:
+            return {
+                "hasPermission": True,
+                "reason": "권한 부여됨",
+                "note": perm._mapping.get("note")
+            }
+        else:
+            return {"hasPermission": False, "reason": "권한 없음"}
 
 # ===== 추천서 공유 링크 생성 API =====
 @app.get("/share-recommendation/{recommendation_id}")
@@ -3340,13 +3995,6 @@ async def evaluate_recommendation(request: EvaluationRequest):
     print(f"추천서 길이: {len(request.recommendation_text)} 자")
     
     try:
-        # RecoEvaluator 모듈 확인
-        if RecoEvaluator is None:
-            raise HTTPException(
-                status_code=503,
-                detail="평가 시스템을 사용할 수 없습니다. evals 모듈을 불러올 수 없습니다."
-            )
-        
         # OpenAI API Key 확인
         if not openai_api_key:
             raise HTTPException(
